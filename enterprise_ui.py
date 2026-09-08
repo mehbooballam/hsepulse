@@ -42,6 +42,9 @@ def render(page,store,mode):
   if urlsplit(base).hostname in ('localhost','127.0.0.1'):
    base=st.context.url or base
   return base.rstrip('/')+'/?'+urlencode({'view':view,**params})
+ def nav_button(label,view,container=st,key=None,**params):
+  from ui_shell import go
+  container.button(label,key=key,on_click=go,args=(view,),kwargs=params,width='stretch')
  def save(table,rows):
   for row in rows:
    if not e.permitted(role,assigned,row.get('Project',row.get('project','')),table,True): raise ValueError('Your role cannot update this area.')
@@ -90,7 +93,7 @@ def render(page,store,mode):
     st.subheader('🚨 Action required')
     for a in al[:6]:
      st.markdown(f"**{a['Level']} · {a['Project']}** — {a['Issue']}")
-     st.link_button('Review '+a['Record'][:12],link('Operational registers',form=a['Register'],project=a['Project']),key='alert_'+a['id'])
+     nav_button('Review '+e.LABELS.get(a['Register'],'record').lower(),'Operational registers',form=a['Register'],project=a['Project'],key='alert_'+a['id'])
     if not al: st.success('No rules currently triggered. Check data coverage before drawing conclusions.')
    with st.expander('How the score and rates are calculated'):
     st.write('Control assurance is the equal-weight average of available inspection completion, action closure, permit checks, required training validity and verified applicable compliance. It is an internal operational indicator, not an IOSH certification score. Missing areas are excluded and coverage is shown; incomplete coverage cannot be green. Critical alerts override the score.')
@@ -103,7 +106,7 @@ def render(page,store,mode):
     ranking=matrix.dropna(subset=['Score']).sort_values('Score',ascending=False)
     if not ranking.empty: st.bar_chart(ranking.set_index('Project')['Score'],color='#168563')
     for row in range(0,len(allowed),5):
-     for col,p in zip(st.columns(5),allowed[row:row+5]): col.link_button(p['name'],link('Project dashboards',project=p['id']),width='stretch')
+     for col,p in zip(st.columns(5),allowed[row:row+5]): nav_button(p['name'],'Project dashboards',container=col,project=p['id'],key='project_'+p['id'])
    st.subheader('Leading and lagging indicators')
    for group in (['Incidents','Near Miss','LTI'],['TRIR','LTIFR','Severity Rate']):
     for col,k in zip(st.columns(3),group): col.metric(k,'—' if m[k] is None else f'{m[k]:,.2f}')
@@ -115,7 +118,7 @@ def render(page,store,mode):
    if project:
     st.subheader('Upcoming high-risk work')
     frame([r for r in t['07_HIGH_RISK'] if r['Project']==project and r.get('Status') not in ('Complete','Cancelled')])
-    st.link_button('Submit a project report',link('Field forms',project=project,form='03_DAILY_REPORT'))
+    nav_button('New daily report','Field forms',project=project,form='03_DAILY_REPORT')
    st.caption('Updates every 30 seconds while this dashboard is open · '+datetime.now(TZ).strftime('%H:%M:%S Riyadh'))
   live()
 
@@ -183,7 +186,7 @@ def render(page,store,mode):
     if saved_records:
      for saved in saved_records:
       if saved['category']==table: st.code(saved['Record ID'],language=None)
-    st.link_button('Open project dashboard',link('Project dashboards',project=project))
+    nav_button('Open project dashboard','Project dashboards',project=project)
    except ValueError as exc: st.error(str(exc))
    except Exception: st.error('Save could not be confirmed. Refresh and check the record ID before retrying. Your entries remain here.')
   st.link_button('Share this form',link('Field forms',project=project,form=table))
@@ -197,7 +200,7 @@ def render(page,store,mode):
   for r in rows:
    if table=='08_ACTIONS': r['Days Open']=e.days_open(r); r['Days Overdue']=max(0,(today()-date.fromisoformat(r['Due Date'])).days) if e.overdue(r) else 0
   frame(rows); download(table,rows)
-  st.link_button('Add or update a record',link('Field forms',form=table,project=project))
+  nav_button('Add or update a record','Field forms',form=table,project=project)
   attached=[r for r in rows if r.get('Attachment ID')]
   if attached:
    rid=st.selectbox('View photo evidence',[r['id'] for r in attached]); record=next(r for r in attached if r['id']==rid)
@@ -209,7 +212,7 @@ def render(page,store,mode):
   frame([{**r,'Acknowledgement':states.get(r['id'],{}).get('status','New')} for r in al])
   if al:
    aid=st.selectbox('Review alert',[r['id'] for r in al]); a=next(r for r in al if r['id']==aid)
-   st.link_button('Open related register',link('Operational registers',form=a['Register'],project=a['Project']))
+   nav_button('Open related register','Operational registers',form=a['Register'],project=a['Project'])
    note=st.text_input('Review note')
    if st.button('Acknowledge alert',disabled=not e.permitted(role,assigned,a['Project'],'AlertState',True)):
     try: save('AlertState',[{'id':aid,'project':a['Project'],'status':'Acknowledged','note':note,'actor':actor}]); st.success('Acknowledgement saved.')
@@ -218,7 +221,7 @@ def render(page,store,mode):
   st.info('External delivery is not connected. Preview messages below; no WhatsApp, email or Teams message is sent.')
   payload=[{'channel':'WhatsApp / Email / Teams','text':f"HSE {a['Level'].upper()} | {a['Project']} | {a['Issue']} | Responsible: {a['Responsible']} | {link('Operational registers',form=a['Register'],project=a['Project'])}",'deduplication_key':a['id']} for a in al if a['Level'] in ('Red','Orange')]
   st.download_button('Download notification preview',json.dumps(payload,indent=2),'notification-preview.json','application/json')
-  st.link_button('Issue corporate feedback',link('Field forms',form='13_CORP_FEEDBACK'))
+  nav_button('Issue corporate feedback','Field forms',form='13_CORP_FEEDBACK')
  elif page=='Standards library':
   st.title('Standards & client requirements'); st.info('These 17 requirement families came from your workbook. They are unverified templates; record the current clause, revision, applicability and evidence before marking project compliance.')
   frame(t['Standards']); download('Standards',t['Standards'])

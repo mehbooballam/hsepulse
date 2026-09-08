@@ -107,30 +107,32 @@ def authenticate(settings):
         st.stop()
     claims=restore(auth,st.session_state,config['url'])
     if not claims:
-        st.title('Welcome to HSE Pulse')
-        st.write('Sign in to manage your projects and daily HSE performance.')
-        login,recovery=st.tabs(['Sign in','Forgot password'])
-        with login:
-            with st.form('supabase_login',clear_on_submit=True):
-                email=st.text_input('Work email'); password=st.text_input('Password',type='password')
-                submit=st.form_submit_button('Sign in',type='primary',width='stretch')
-            if submit:
-                try:
-                    result=auth.sign_in_with_password({'email':canonical_email(email),'password':password})
-                    verified_claims(auth,result.session.access_token,config['url'])
-                    st.session_state.clear(); keep_session(st.session_state,result); st.rerun()
-                except Exception: st.error('Sign-in failed. Check your email and password, or reset your password.')
-        with recovery:
-            with st.form('supabase_recover',clear_on_submit=True):
-                email=st.text_input('Account email')
-                send=st.form_submit_button('Send password reset email')
-            if send:
-                try:
-                    auth.reset_password_email(canonical_email(email),{'redirect_to':settings['application']['public_url'].rstrip('/')+'/?reset=1'})
-                except Exception: pass
-                st.info('If the account is eligible, a password reset email will arrive. Check your inbox and spam folder.')
-        st.caption('Access is by invitation. Ask your administrator to invite your work email.')
-        st.stop()
+        _,panel,_=st.columns([1,2,1])
+        with panel:
+            st.title('Welcome to HSE Pulse')
+            st.write('Sign in to manage your projects and daily HSE performance.')
+            login,recovery=st.tabs(['Sign in','Forgot password'])
+            with login:
+                with st.form('supabase_login',clear_on_submit=True):
+                    email=st.text_input('Work email'); password=st.text_input('Password',type='password')
+                    submit=st.form_submit_button('Sign in',type='primary',width='stretch')
+                if submit:
+                    try:
+                        result=auth.sign_in_with_password({'email':canonical_email(email),'password':password})
+                        verified_claims(auth,result.session.access_token,config['url'])
+                        st.session_state.clear(); keep_session(st.session_state,result); st.rerun()
+                    except Exception: st.error('Sign-in failed. Check your email and password, or reset your password.')
+            with recovery:
+                with st.form('supabase_recover',clear_on_submit=True):
+                    email=st.text_input('Account email')
+                    send=st.form_submit_button('Send password reset email')
+                if send:
+                    try:
+                        auth.reset_password_email(canonical_email(email),{'redirect_to':settings['application']['public_url'].rstrip('/')+'/?reset=1'})
+                    except Exception: pass
+                    st.info('If the account is eligible, a password reset email will arrive. Check your inbox and spam folder.')
+            st.caption('Access is by invitation. Ask your administrator to invite your work email.')
+            st.stop()
     if st.session_state.get('set_account_password'):
         st.title('Set your password')
         st.caption(claims['email'])

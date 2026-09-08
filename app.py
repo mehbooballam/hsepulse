@@ -17,15 +17,9 @@ from access_control import AuthorizedStore, SCHEMAS as ACCOUNT_SCHEMAS
 
 ROOT=Path(__file__).parent
 st.set_page_config(page_title='HSE Pulse',page_icon='🛡️',layout='wide')
-st.markdown('''<style>
-.block-container {padding-top:2rem;max-width:1500px;}
-[data-testid="stMetric"] {background:white;border:1px solid #E2E8F0;border-radius:14px;padding:18px;}
-[data-testid="stMetricLabel"] {color:#60718B;}
-[data-testid="stMetricValue"] {font-size:2rem;}
-[data-testid="stSidebar"] {border-right:1px solid #E2E8F0;}
-h1 {letter-spacing:-1.4px;} h3 {letter-spacing:-.4px;}
-.stButton button {border-radius:9px;}
-</style>''',unsafe_allow_html=True)
+import ui_shell
+ui_shell.styles()
+ui_shell.brand()
 
 try: application_settings=dict(st.secrets)
 except (FileNotFoundError,st.errors.StreamlitSecretNotFoundError): application_settings={}
@@ -40,17 +34,8 @@ if production:
         'Corporate manager' if member['role']=='Administrator' else member['role'],
         __import__('access_control').assignments(member),member['email'])
 
-with st.sidebar:
-    st.markdown('## 🛡️ HSE Pulse')
-    st.caption('Daily controls. Clear accountability.')
-    mode='Database' if production else 'Demo'
-    st.caption('Supabase database' if production else 'Demo workspace')
-    area=st.selectbox('Application area',['Project management','Advanced KPI workspace'])
-    pages=(enterprise_ui.PAGES+(['Team & access'] if mode=='Demo' or (production and member['role']=='Administrator') else []) if area=='Project management' else ['Overview','Daily entry','KPI register','Corrective actions','Reports & export'])+['Data & export']
-    requested=st.query_params.get('view',pages[0])
-    page=st.radio('Workspace',pages,index=pages.index(requested) if requested in pages else 0)
-    st.divider()
-    st.caption('Reporting timezone: Asia/Riyadh')
+mode='Database' if production else 'Demo'
+page=ui_shell.navigation(member['role'] if production else 'Administrator',demo=not production)
 key='demo_store_v2' if mode=='Demo' else 'database_store_v3'
 try:
     if production:
@@ -62,7 +47,7 @@ try:
     data_key=key+'_data'
     if data_key not in st.session_state:
         st.session_state[data_key]=store.read(); st.session_state[key+'_sync']=stamp()
-    if st.sidebar.button('Refresh data',width='stretch'):
+    if st.sidebar.button('Refresh data',icon=':material/refresh:',width='stretch'):
         st.session_state[data_key]=store.read(); st.session_state[key+'_sync']=stamp()
         st.rerun()
     tables=st.session_state[data_key]
@@ -70,7 +55,7 @@ except Exception as exc:
     st.error(f'Database unavailable ({type(exc).__name__}). Refresh or contact the administrator. No data was saved.')
     st.stop()
 
-if mode=='Demo': st.info('DEMO WORKSPACE · Synthetic data. Changes last only for this browser session and are never sent to the database.')
+if mode=='Demo': st.caption('Preview workspace · Sample records · Changes are saved only for this session.')
 if 'flash' in st.session_state: st.success(st.session_state.pop('flash'))
 st.sidebar.caption('Last loaded: '+st.session_state[key+'_sync'][:19].replace('T',' ')+' UTC')
 if page=='Team & access':

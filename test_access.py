@@ -81,6 +81,6 @@ class AccessTests(unittest.TestCase):
   from streamlit.testing.v1 import AppTest
   at=AppTest.from_file('app.py',default_timeout=60); at.secrets['application']={'enabled':False}; at.run()
   for page in ['Team & access']:
-   at.sidebar.radio[0].set_value(page).run(); self.assertFalse(at.exception,page)
+   at.button(key='nav_'+page).click().run(); self.assertFalse(at.exception,page)
 
 if __name__=='__main__': unittest.main()

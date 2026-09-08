@@ -33,8 +33,10 @@ def production_context(settings):
   st.title('Access pending'); st.info(str(exc))
   if st.button('Sign out'): sign_out(auth)
   st.stop()
- if st.sidebar.button('Sign out'): sign_out(auth)
- st.sidebar.caption(user['email']+' · '+user['role'])
+ with st.sidebar.expander('Your account'):
+  st.write(user['email'])
+  st.caption(user['role'])
+  if st.button('Sign out',icon=':material/logout:',width='stretch'): sign_out(auth)
  return accounts,raw,claims,user
 
 def team_page(raw,claims,settings,demo=False):

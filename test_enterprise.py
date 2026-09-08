@@ -33,18 +33,18 @@ class EnterpriseTests(unittest.TestCase):
  def test_all_pages_forms_and_scopes(self):
   at=AppTest.from_file('app.py',default_timeout=60); at.secrets['application']={'enabled':False}; at.run()
   for page in ['Corporate dashboard','Project dashboards','Field forms','Operational registers','Alerts & decisions','Standards library','Management report','Project settings']:
-   at.sidebar.radio[0].set_value(page).run(); self.assertFalse(at.exception,page)
-  at.sidebar.radio[0].set_value('Field forms').run()
+   at.button(key='nav_'+page).click().run(); self.assertFalse(at.exception,page)
+  at.button(key='nav_'+'Field forms').click().run()
   for table in e.FORMS:
    next(x for x in at.selectbox if x.label=='Report type').set_value(table).run(); self.assertFalse(at.exception,table)
   next(x for x in at.selectbox if x.label=='Report type').set_value('04_OBSERVATIONS').run()
   next(x for x in at.text_input if x.label=='Description').set_value('Test observation')
   next(x for x in at.button if x.label=='Save report').click().run(); self.assertFalse(at.exception); self.assertTrue(at.success)
   self.assertEqual(len(at.session_state['demo_store_v2'].read()['04_OBSERVATIONS']),1)
-  at.sidebar.radio[0].set_value('Corporate dashboard').run()
+  at.button(key='nav_'+'Corporate dashboard').click().run()
   next(x for x in at.selectbox if x.label=='Role').set_value('Project lead').run()
   self.assertFalse(at.exception)
-  at.sidebar.radio[0].set_value('Project dashboards').run()
+  at.button(key='nav_'+'Project dashboards').click().run()
   self.assertEqual(next(x for x in at.selectbox if x.label=='Project').options,['Project 01'])
 
 if __name__=='__main__': unittest.main()
