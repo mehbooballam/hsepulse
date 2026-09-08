@@ -11,32 +11,14 @@ PAGES=['Corporate dashboard','Project dashboards','Field forms','Operational reg
 COLORS={'Green':'#168563','Amber':'#b88400','Orange':'#e27025','Red':'#dc4255','Gray':'#798596'}
 
 def identity(mode):
- if mode=='Google Sheets' and st.session_state.get('authenticated_identity'):
+ if mode=='Database' and st.session_state.get('authenticated_identity'):
   return st.session_state['authenticated_identity']
  if mode=='Demo':
   with st.sidebar.expander('Preview access roles'):
    role=st.selectbox('Role',['Corporate manager','Corporate viewer','Project manager','HSE officer','Project lead','Project viewer'])
    assigned=st.multiselect('Assigned projects',[f'P{i:02}' for i in range(1,16)],default=['P01'])
   return role,assigned,'Demo user'
- try: security=dict(st.secrets.get('access',{}))
- except Exception: security={}
- if not security:
-  st.warning('Live workspace requires user access configuration. Add an identity provider and approved users to the server secrets; demo remains available.')
-  st.code('[auth]\nredirect_uri = "http://localhost:8501/oauth2callback"\ncookie_secret = "GENERATE_RANDOM_SECRET"\nclient_id = "OIDC_CLIENT_ID"\nclient_secret = "OIDC_CLIENT_SECRET"\nserver_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"\n\n[access."manager@example.com"]\nrole = "Corporate manager"\nprojects = ["P01"]')
-  st.stop()
- if not st.user.is_logged_in:
-  st.title('Welcome to HSE Pulse')
-  st.write('Sign in to open your assigned projects.')
-  if st.button('Sign in',type='primary'): st.login()
-  st.stop()
- email=str(st.user.get('email','')).lower(); user=security.get(email)
- if st.user.get('email_verified') is False: user=None
- if not user:
-  st.error('Your account has not been assigned access. Contact your corporate administrator.')
-  if st.button('Sign out'): st.logout()
-  st.stop()
- if st.sidebar.button('Sign out'): st.logout()
- return user.get('role',''),list(user.get('projects',[])),email
+ st.error('Sign in through the application to open this workspace.'); st.stop()
 
 def safe_csv(df):
  return df.map(lambda v:"'"+v if isinstance(v,str) and v.startswith(('=','+','-','@')) else v).to_csv(index=False).encode('utf-8-sig')
@@ -66,9 +48,11 @@ def render(page,store,mode):
   store.save(table,rows,{r['id']:r.get('revision','') for r in t[table]})
  def pick_project(label='Project'):
   default=st.query_params.get('project',ids[0]); return st.selectbox(label,ids,index=ids.index(default) if default in ids else 0,format_func=lambda p:names[p])
- def download(table,rows): st.download_button('Download register',safe_csv(pd.DataFrame(rows)),f'{table}.csv','text/csv')
+ def download(table,rows):
+  from export_ui import export_buttons
+  export_buttons(table,rows)
  def frame(rows):
-  if rows: st.dataframe(pd.DataFrame(rows),hide_index=True,width='stretch')
+  if rows: st.dataframe(__import__('export_ui').display_frame(rows),hide_index=True,width='stretch')
   else: st.info('No records yet. Use Field forms to add the first record.')
  def project_matrix(start,end):
   return [{'Project':p['name'],'Code':p['id'],**{k:v for k,v in e.metrics(t,start,end,p['id']).items() if k!='controls'}} for p in allowed]
@@ -145,9 +129,9 @@ def render(page,store,mode):
   table=st.selectbox('Report type',choices,index=choices.index(selected) if selected in choices else 0,format_func=e.LABELS.get)
   if not e.permitted(role,assigned,project,table,True): st.info('Your role can view this area but cannot submit this form.'); return
   existing=[r for r in t[table] if r['Project']==project]
-  selected_id=st.selectbox('Create or update',['New record']+[r['id'] for r in existing])
+  selected_id=st.selectbox('Create or update',['New record']+[r['id'] for r in existing],format_func=lambda value:next((r.get('Record ID',value) for r in existing if r['id']==value),value))
   old=next((r for r in existing if r['id']==selected_id),{})
-  st.caption('To close or revise a record, select its existing ID. Daily reports use one record per project, date and shift.')
+  st.caption('Record IDs are assigned when saved: CATEGORY–NUMBER–UTC TIMESTAMP. The ID stays unchanged when you edit. Daily reports use one entry per project, date and shift.')
   with st.form('operational_'+table,clear_on_submit=False):
    row={'id':old.get('id',st.session_state.setdefault('draft_'+table,uid())),'Project':project,'actor':actor}
    fields=[f for f in e.FORMS[table] if f not in ('Project','Days Open','Days Overdue')]
@@ -193,9 +177,12 @@ def render(page,store,mode):
      for r in rows:
       if not e.permitted(role,assigned,project,tab,True): raise ValueError('No write access.')
     expected={tab:{r['id']:r.get('revision','') for r in t[tab]} for tab in changes}
-    store.save_many(changes,expected)
+    saved_records=store.save_many(changes,expected)
     st.session_state.pop('draft_'+table,None)
     st.success('Saved. The project and corporate dashboards now use this record.')
+    if saved_records:
+     for saved in saved_records:
+      if saved['category']==table: st.code(saved['Record ID'],language=None)
     st.link_button('Open project dashboard',link('Project dashboards',project=project))
    except ValueError as exc: st.error(str(exc))
    except Exception: st.error('Save could not be confirmed. Refresh and check the record ID before retrying. Your entries remain here.')
@@ -255,7 +242,7 @@ def render(page,store,mode):
    for table in e.FORMS: z.writestr(table+'.csv',safe_csv(pd.DataFrame(t[table])))
   st.download_button('Export accessible project registers',buff.getvalue(),'HSE-registers.zip','application/zip')
  elif page=='Project settings':
-  st.title('Projects & access'); frame(allowed)
+  st.title('Projects & access'); frame(allowed); download('Projects',allowed)
   if role!='Corporate manager': st.info('Corporate managers maintain project settings.'); return
   project=pick_project(); old=next(r for r in allowed if r['id']==project)
   with st.form('project_settings'):
@@ -271,11 +258,11 @@ def render(page,store,mode):
     if st.form_submit_button('Create project'):
      if not new_id.strip() or not new_name.strip() or any(p['id']==new_id.strip() for p in t['Projects']): st.error('Enter a unique code and project name.')
      else:
-      save('Projects',[{'id':new_id.strip(),'name':new_name.strip(),'client':'','location':'','lead':'','hse_lead':'','status':'Active','target':90,'actor':actor}]); st.success('Project created. Refresh to open it and assign users in server access settings.')
+      save('Projects',[{'id':new_id.strip(),'name':new_name.strip(),'client':'','location':'','lead':'','hse_lead':'','status':'Active','target':90,'actor':actor}]); st.success('Project created. Refresh to open it and assign users in Team & access.')
   with st.form('configuration'):
    url=st.text_input('App URL for shared form links',cfg['base_url']); cutoff=st.time_input('Daily report cutoff (Riyadh)',time.fromisoformat(cfg['report_cutoff']))
    green=st.number_input('Green threshold',0.,100.,float(cfg['green_threshold'])); amber=st.number_input('Amber threshold',0.,100.,float(cfg['amber_threshold'])); orange=st.number_input('Orange threshold',0.,100.,float(cfg['orange_threshold']))
    if st.form_submit_button('Save dashboard settings'):
     if not 0<=orange<amber<green<=100 or not url.startswith(('http://','https://')): st.error('Enter a valid app URL and increasing thresholds.')
     else: save('Settings',[{'id':k,'value':str(v),'actor':actor} for k,v in {'base_url':url,'report_cutoff':cutoff.strftime('%H:%M'),'green_threshold':green,'amber_threshold':amber,'orange_threshold':orange}.items()]); st.success('Settings saved.')
-  st.caption('Live roles are managed in server secrets by email address. Project selection and URL parameters never grant access. Corporate viewers read all projects; project roles are restricted to assigned projects. Only corporate managers maintain settings, standards and corporate instructions.')
+  st.caption('Roles and project access are managed in Team & access. Project selection and URL parameters never grant access. Corporate viewers read all projects; project roles are restricted to assigned projects. Only corporate managers maintain settings, standards and corporate instructions.')

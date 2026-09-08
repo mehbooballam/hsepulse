@@ -5,6 +5,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer, Text, select, update, insert, text
 from sqlalchemy.exc import IntegrityError
 from domain import uid, stamp
+from record_numbers import numbered
 from access_control import SCHEMAS
 
 class AccountStore:
@@ -47,7 +48,7 @@ class AccountStore:
     raise ConflictError('Account permissions changed. Refresh and retry.')
    for table,rows in changes.items():
     current={r['id']:r for r in doc['tables'][table]}; check_conflicts(current,rows,expected.get(table,{}))
-    for row in rows: current[row['id']]={**deepcopy(row),'revision':uid(),'updated_at':stamp()}
+    for row in rows: current[row['id']]={**numbered(doc,table,deepcopy(row),current.get(row['id'])),'revision':uid(),'updated_at':stamp()}
     doc['tables'][table]=list(current.values())
   self.mutate(apply)
  def save(self,table,rows,expected=None): self.save_many({table:rows},{table:expected or {}})

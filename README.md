@@ -1,215 +1,94 @@
-# HSE Pulse — Supabase accounts + Google Sheets
-
-Google Sheets remains the master HSE data source. Supabase provides email/password
-login, invitation emails, password recovery and the encrypted account database.
-There is no separate PostgreSQL service or database password in the app config.
-
-## One-time platform setup
-
-1. Create a Supabase project and run `supabase/setup.sql` in its SQL Editor.
-   The table is protected by RLS and denies `anon` and `authenticated` access;
-   only the server API key can read and update encrypted account metadata.
-2. In Authentication, disable public signups and anonymous sign-in, keep email
-   confirmation enabled, and set the Site URL to the deployed app URL.
-   Allow redirects to `https://hsepulse-dashboard.streamlit.app/**`.
-3. Copy `.streamlit/organization.secrets.example.toml` into hosting Secrets.
-   Set the project URL, publishable key, server secret key, bootstrap administrator
-   email and a Fernet key generated once and backed up securely.
-4. Invite the bootstrap administrator through Supabase Auth. The recipient opens
-   the email, confirms their account in the app and chooses their own password.
-   The verified configured email becomes the first administrator exactly once.
-5. Enable the Google Sheets API and create a dedicated service account (no project
-   IAM roles or domain-wide delegation needed). Store its JSON fields under
-   `[gcp_service_account]` in Streamlit hosting Secrets. Never commit the key.
-   Share the spreadsheet with the displayed service-account email as Editor, then
-   paste its edit link into **Master sheet** and click **Connect sheet**.
-   Sheets allowing anyone-with-link editing may also be used. API writes still
-   require the server credential; a public link alone is insufficient.
-6. Invite colleagues from **Team & access**, assigning a role and project scope.
-
-Standard Supabase invitation/recovery emails are supported by a same-origin
-callback component. It removes token fragments from the browser address, validates
-identity with Supabase and asks the recipient to confirm the displayed email.
-It does not place tokens in query parameters or browser local storage. Sessions
-are held in Streamlit session state; a browser reload may require signing in again.
-Custom email templates in `supabase/email-templates/` are optional.
-
-Supabase's default mail service has recipient and rate restrictions. Configure a
-custom SMTP provider in Supabase before inviting the wider team. The app has no
-separate SMTP secrets. Mail delivery failures remain visible in invitation status.
-
-## Spreadsheet links and login
-
-Users sign in with Supabase email/password. Google interactive OAuth is no longer
-used for login or sheet connections. The master administrator supplies a normal
-Google Sheets edit link. The server checks write permission before initializing
-registers; incompatible existing headers stop setup. Other workbook tabs remain
-untouched. This does not automatically import arbitrary workbook layouts.
-
-## Roles and authorization
-
-Administrators manage membership and the Google connection. Corporate managers
-manage HSE records across projects; corporate viewers have read access. Project
-managers, HSE officers and project leads can submit within assigned projects;
-project viewers are read-only. Permissions come from protected server-side records,
-never user-editable Supabase metadata. Suspensions and role changes are checked on
-each app request and storage access. The last active administrator cannot be removed.
-
-Invitation grants are email-bound, hashed, expiring and single-use. Revoking or
-reissuing an invitation invalidates its old workspace grant, even if a Supabase
-email session was already issued. Supabase identity alone grants no project access.
-
-## Verification and boundaries
-
-Run `.venv/bin/python -m unittest test_app test_enterprise test_access test_supabase_login -q`.
-Tests use isolated demo accounts and mocks, never live hosting secrets. Live database
-checks should additionally confirm the server connection and denied public access.
-Dependencies are pinned with `requirements.lock`.
-
-One organization is supported per deployment. Account metadata and audit history
-use one encrypted aggregate with an atomic version check to reject concurrent updates.
-Back up the Fernet key separately: losing it makes the stored data unreadable.
-Google Sheets has no cross-process conditional writes; use one application writer
-and restrict manual editing. Account audit writes and Sheets updates are not one
-cross-service transaction. Audit history should be moved into a dedicated table
-before high-volume use. Existing Google OIDC memberships are not automatically
-rebound to Supabase identities; migration requires an explicit administrator process.
-
-The material below describes the legacy service-account/demo setup.
-
----
-
 # HSE Pulse
 
-Streamlit dashboard for daily health, safety and environmental performance, with Google Sheets as its only live persistent backend.
+A multi-project Streamlit HSE application backed entirely by Supabase. Supabase
+Auth provides invited-user email/password sign-in; the database stores all
+operational records, evidence, project configuration, memberships and audit history.
+There is no Google Sheets setup or Google sign-in in the application.
 
-## Run
+## Platform setup
 
-```bash
-cd "/Users/mehboobalam/Desktop/HSE Tool"
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/streamlit run app.py
-```
+1. Run `supabase/setup.sql`, then `supabase/database.sql` in the Supabase SQL Editor.
+2. Set the Supabase URL, publishable key, server secret key and application encryption
+   key using `.streamlit/organization.secrets.example.toml`. Keep real keys out of Git.
+3. Run `.venv/bin/python bootstrap_database.py` with the ignored local secrets file.
+   This registers every category and initializes missing template records. Existing
+   data is preserved. The initializer must finish before deploying the application.
+4. Configure Supabase's Site URL and redirect allowlist for your app. Keep public
+   signup and anonymous access disabled. Invite the configured bootstrap administrator.
+5. Open the invitation or password recovery email and choose a password. The verified
+   bootstrap email becomes the first administrator once. Invite colleagues in
+   **Team & access**, assigning their roles and project scope.
 
-Open http://localhost:8501. Without credentials, the app starts in **Demo** mode. Demo changes exist only in that browser session and are not uploaded or persisted to disk.
+The hosted entry point is `app.py`. Dependencies are pinned in `requirements.lock`.
+Run locally with `.venv/bin/streamlit run app.py`. Without organization mode the app
+uses an isolated demonstration session; live deployments require Supabase configuration.
 
-## Connect Google Sheets
+## Data coverage
 
-The private workbook connection is configured locally in the git-ignored `backend.json`, through `HSE_SPREADSHEET_ID`, or in Streamlit secrets. Copy `backend.example.json` to `backend.json` and enter your workbook ID and URL.
+`storage.SCHEMAS` includes all fields in `domain.SCHEMAS` and `enterprise.SCHEMAS`:
+288 KPI definitions, daily KPI inputs, sites, corrective actions, projects, settings,
+standards, evidence, alert acknowledgements, and all 15 operational register types.
+The 11 original workbook input registers retain every source input field. Their
+first ID column is represented by the system-generated **Record ID**. Additional
+stop-work, audit, emergency and resource registers are included.
 
-1. In Google Cloud Console, create/select a project and enable Google Sheets API.
-2. Create a service account under IAM & Admin. No project-wide role is needed for this app.
-3. Create/download a JSON key and store it outside the repository.
-4. Share the workbook with the key's `client_email` as Editor.
-5. Set the credential path and restart:
+Each operational row is stored independently in `hsepulse_records`. Its `data` JSONB
+retains complete field names, values and additional fields without truncation;
+`hsepulse_categories.fields` records the full field dictionary. Project, category,
+sequence, ID and timestamps have separate indexed/typed database columns. Evidence
+bytes are stored as the existing base64 chunks in database records and included in
+JSON exports. `hsepulse_record_history` retains each saved revision.
 
-```bash
-export GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/to/service-account.json"
-.venv/bin/streamlit run app.py
-```
+## Record identifiers
 
-The workbook ID is already configured. To use another prepared workbook, set `HSE_SPREADSHEET_ID`.
-Alternatively, copy `.streamlit/secrets.example.toml` to `.streamlit/secrets.toml` and enter the matching fields. Secrets and common credential filenames are git-ignored. Never commit private keys.
+The database generates a unique public ID at first save, for example:
+`INCIDENTS-000001-20260908T193012123456Z`.
 
-Select **Google Sheets** in the sidebar. The setup page contains the same steps. Codex connector authentication is separate from runtime app authentication.
+This encodes the register category, a per-category sequence and creation time in
+UTC (including microseconds). Sequence allocation is transactional across app
+instances. The ID and creation time never change on edits. Internal keys remain
+stable for project codes, daily-report uniqueness and linked actions/evidence;
+exports label them **Internal key** separately from the public **Record ID**.
+Historical keys are not destructively renumbered. Imported or template records
+receive a public ID when first inserted into this database; their source timestamps
+remain in the source data where available.
 
-## Features
+## Exports
 
-- 288 catalogue entries: the 280 discussed KPIs plus 8 operational input/coverage measures.
-- 36 daily entry measures and four calculated injury rates configured initially.
-- Broader indicators remain clearly marked as draft until their measurement rules are configured.
-- Date, site and Day/Night shift filters; trend charts and target status.
-- Daily reporting grid, with numerator/denominator definitions beside each field.
-- Custom KPI creation, definition activation, ownership, targets and site creation.
-- Corrective actions with owner, priority, due date, progress and closure evidence.
-- Validated CSV imports; filtered reports and complete current-data ZIP export.
-- Missing, zero and not-applicable values distinguished.
-- Google Sheets revisions retained for records, definitions, sites and actions.
+**Data & export** provides CSV and JSON for every accessible operational category,
+plus a ZIP of all accessible categories. Empty categories retain their column
+headers. Register pages include direct exports. Team administration exports members,
+invitation status (without token hashes) and audit history for administrators only.
+CSV exports escape spreadsheet formula prefixes. JSON preserves original values.
 
-## Workbook contract
+Permissions are checked server-side on every read, mutation and export. Project
+roles receive only assigned projects; corporate viewers can read the portfolio.
+Only administrators manage accounts. Viewer roles cannot write. A verified Supabase
+identity alone does not grant workspace membership. Role grants never come from
+editable user metadata. Account suspensions and role changes are rechecked on access.
 
-`Definitions`, `Records`, `Actions` and `Sites` store rows with stable IDs and revision metadata. Column names and order are defined in `domain.SCHEMAS`; do not rename tabs or columns. Rows are an **append-only revision log**, not an editable sorted report. The last appended row for an ID is its current state. Do not physically sort or delete log rows; use filter views or the app for reporting. Corrections in the app append a new revision, preserving earlier values.
+## Consistency and security
 
-The workbook starts with definitions and one Main site. Actual records/actions are intentionally empty. Synthetic demo observations are never seeded into it.
+All database tables enable RLS and deny `anon` and `authenticated` direct access.
+Only the server credential can use record tables and the save function. Application
+RBAC scopes the server results. Do not embed the server key in a browser client.
 
-The runtime uses the Sheets API only, with spreadsheet scope. Writes use RAW values, preventing user notes from becoming formulas. All rows in an import are validated before one append request. If a save cannot be confirmed, refresh and verify before retrying. A successful write followed by a failed read does not automatically repeat the write.
+Operational batches, linked actions/evidence and encrypted audit updates commit in
+one database transaction. Revision predicates reject stale edits. The organization
+version lock also prevents an access change from racing a pending save. Account
+metadata is encrypted with Fernet; back up that encryption key separately.
 
-All sessions served by one Python process share a write lock, and stale row revisions are rejected. Google Sheets has no cross-process compare-and-swap transaction: simultaneous edits from another application/server or direct spreadsheet editing are not covered by the in-process lock. Use one app process for this local workflow. The app reloads data on explicit Refresh or after its own saves; other users' changes are not pushed automatically.
+One organization is supported per deployment. Current reads paginate all records
+before role filtering; very large datasets will need query-level filtering and
+pagination in the UI. The Supabase default email service has recipient and rate
+limits; configure custom SMTP in Supabase for wider-team delivery.
 
-This local build binds to 127.0.0.1 and has no end-user authentication. Before public/team deployment add authentication and access controls. The entered reporter/owner names are labels, not verified identities. The workbook retains all revisions but the downloaded backup contains current rows only. Large histories require archiving or a more scalable storage design.
+## Verification
 
-## Calculation rules
+Run `.venv/bin/python -m unittest discover -q`. Tests cover KPI calculations, form
+validation, workbook field coverage, ID stability, exports, pagination, auth, RBAC
+and revision conflicts. Live deployment checks must also verify transactional
+writes, rollback on conflicts and denied direct public access.
 
-- Sum: total of applicable recorded values. Missing shifts are not silently included as zeros.
-- Percentage: sum of numerators / sum of denominators × 100, not an average of percentages.
-- Ratio: sum of numerators / sum of denominators.
-- Snapshot: latest selected date/shift for each site, then sum across sites. Day precedes Night on the report date. This is not a unique-worker total over a period.
-- Explicit N/A requires a reason and blank numeric cells. A 0/0 ratio also displays N/A.
-- TRIR / TCIR: recordable injury and illness cases × 200,000 / actual hours.
-- DART: unique days-away/restricted/transferred cases × 200,000 / actual hours.
-- LTIFR: lost-time injuries × 1,000,000 / actual hours (selected convention).
-- Severity: days lost × 1,000,000 / actual hours (selected convention).
-- Built-in injury rates are unavailable when numerator and hours do not cover exactly the same site/date/shift keys.
-- Daily counts must be incremental shift counts, not cumulative totals. Avoid double-counting a case across shifts. Case classification follows your selected reporting framework.
-- Entry coverage is against daily fields within shifts having at least one record. It cannot establish that every expected shift was reported.
-- Targets start unset in the live workbook. Demo percentage targets of 95% are illustrative only. Target changes apply retrospectively to displayed periods.
-- Calculation rules lock after recording data; create a new indicator when the definition changes.
-- Action-register records and daily action KPI reports are separate. A site can report totals covering actions managed outside this app.
-- Negative inputs are currently unsupported. For emissions reduction, use a nonnegative decrease measure or track actual emissions separately; negative growth/reduction needs a future signed-value measure.
-
-## Validation
-
-```bash
-.venv/bin/python -m unittest test_app -v
-```
-
-Tests cover weighted aggregation, N/A vs zero, invalid inputs, matching rate coverage, snapshot aggregation, revision conflict handling, RAW Sheets writes through a mocked adapter, catalogue uniqueness, page rendering, and demo action/daily-entry saves. Live service-account authentication/read/write cannot be verified until credentials are configured. The actual workbook content, headers, all 288 names and header formatting were verified independently through the Google Drive connector. Native Sheets browser verification was blocked at Google account sign-in by automatic approval review.
-
-## Sources
-
-These are configurable company measures, not an official IOSH/OTHM mandatory KPI list.
-
-- OSHA leading indicators: https://www.osha.gov/leading-indicators
-- OSHA incidence-rate formula: https://www.osha.gov/laws-regs/standardinterpretations/2016-08-23
-- HSE process safety indicators: https://www.hse.gov.uk/pubns/books/hsg254.htm
-- gspread authentication: https://docs.gspread.org/en/master/oauth2.html
-- Google Sheets RAW values: https://developers.google.com/workspace/sheets/api/guides/values
-
-## Corporate multi-project system (workbook replacement)
-
-Open http://localhost:8501/. The default workspace is now the corporate dashboard, with 15 project dashboards and 15 operational forms. The supplied workbook's 11 registers are preserved, supplemented by stop work, audit, emergency readiness and HSE resource registers. The original Downloads workbook was read without modification. `workbook_reference.json` preserves its field definitions and standards templates.
-
-The actual Google Sheets backend has 24 tabs, including the earlier KPI catalogue. Corporate records live in their own named register tabs. The previous advanced KPI workspace remains separate: its legacy records are not silently merged with corporate register data. Corporate injury rates use the incident register and corporate daily reports. Photo evidence is stored as small base64 chunks in Google Sheets (1 MB maximum per image). Linked actions, photos and a submission save in one Sheets batch. Revisions remain append-only. Run one app process for optimistic concurrency protection; Google Sheets does not provide a cross-process compare-and-swap transaction. Keep backend sheet editing restricted to administrators.
-
-### First use
-
-1. Start with `./start.sh` and explore the clearly labelled temporary demo.
-2. Open **Project settings** to rename projects and assign client, location and leads. All 15 original project names are placeholders; operational live registers start empty.
-3. Follow **Google Sheets setup** to create a service account, enable Sheets API, share the backend and configure credentials. Credentials have not been supplied, so live runtime storage is not yet connected.
-4. Configure OIDC sign-in and the `[access."email"]` sections in `.streamlit/secrets.toml` using the example. Install requirements, which include Streamlit's authentication extra. See [Streamlit authentication](https://docs.streamlit.io/develop/api-reference/user/st.login). Live corporate access fails closed without approved user configuration. Use Corporate manager, Corporate viewer, Project manager, HSE officer, Project lead, or Project viewer. Project roles only read/export/write assigned projects; viewers cannot submit. Corporate feedback creation and administrative settings require Corporate manager.
-5. Set the app URL under **Project settings** after hosting on your organization's approved HTTPS server. Each form provides a real project-specific link. Localhost links only work on the machine running the app; they are not public links.
-6. Leads submit via **Field forms**; managers use **Operational registers** to review/filter/export and select existing IDs for updates. Daily reports have a stable ID per project/date/shift; submitting that combination revises the report.
-7. Managers use **Alerts & decisions** for acknowledgement and corporate instructions, and **Management report** for a printable HTML report and scoped register exports.
-
-### Calculation decisions
-
-The workbook's hardcoded 90% project scores and 100% permit compliance have been removed. The app explicitly labels an internal *control assurance* score: equal weighting across available inspection completion, action closure, permit checks, required-training validity and verified applicable compliance. This is a provisional alternative because the shared conversation's example weighted score does not define normalization rules. Coverage is always displayed, incomplete coverage cannot be green, and critical alerts override score color. This is not an IOSH-endorsed scoring system. Corporate thresholds are configurable. All formulas are explained in the dashboard.
-
-Historical manpower is not summed; the dashboard shows the last shift snapshot per project on the period end date. Hours sum over the selected period. Near misses are separate from incident totals. Daily incident summaries are not added to incident-register cases. Rates require positive hours and an exposure report on each incident's project/date. Closed actions stop ageing and stop being overdue. Reopening suspended work requires recorded controls, closure date and verifier. Permit alerts use Riyadh date/time: 24 hours amber, 4 hours orange, expired red. Current operational controls and alerts are explicitly distinguished from period activity KPIs.
-
-The 17 standards entries are unverified requirement families copied from the source template, not a verified legal compliance catalogue. Reference review and project applicability/evidence must be completed separately.
-
-### Notifications and refresh
-
-Dashboards refresh every 30 seconds while open and show a toast for newly triggered alerts. Acknowledgement persists in Sheets and does not suppress an active safety condition. External WhatsApp, email and Teams delivery is **not enabled**: the Alerts page exports a message preview with stable deduplication keys. Credentials, recipients, delivery authorization and a hosted scheduler are still required for unattended notifications or daily summaries. No external messages have been sent.
-
-### Verification
-
-Run `.venv/bin/python -m unittest test_app test_enterprise -q`. Tests cover all workspace pages and forms, saved submissions, role scope, weighted legacy KPIs, corporate exposure rates, missing-data states, closure clocks, permit expiry, atomic conflict handling and literal Google Sheets input handling.
-
-## Streamlit Community Cloud deployment
-
-Deploy repository `mehbooballam/hsepulse`, branch `main`, main file **`app.py`**. Select Python 3.11 under Advanced settings. `start.sh` is only the local launch script and must not be selected as the cloud entry point. Without secrets the deployed app opens in temporary demo mode. Configure the Google service account and OIDC access settings in Streamlit's Secrets interface to enable live project records.
-
-The shared theme configuration leaves network binding to the hosting platform. The local `start.sh` explicitly binds to 127.0.0.1. Default dashboard links automatically follow the deployed app URL.
+Legacy workbook/Sheets utilities are retained for historical reference only; the
+application neither reads Google credentials nor connects to a spreadsheet.

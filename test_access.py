@@ -71,12 +71,6 @@ class AccessTests(unittest.TestCase):
   service=MembershipService(raw); service.bootstrap(ADMIN,ADMIN['email'])
   stale=raw.read(); service.invite(ADMIN,'one@example.com','Corporate viewer',[])
   with self.assertRaises(ConflictError): service._write({'Invitations':[{'id':'race'}]},stale)
- def test_google_initialization_rejects_incompatible_tab(self):
-  from unittest.mock import Mock
-  from google_connection import initialize
-  book=Mock(); worksheet=Mock(); worksheet.title='Projects'; worksheet.row_values.return_value=['wrong header']; book.worksheets.return_value=[worksheet]
-  with self.assertRaises(ValueError): initialize(book)
-  book.add_worksheet.assert_not_called(); worksheet.update.assert_not_called()
  def test_storage_revalidates_session_during_refresh(self):
   self.member()
   check=Mock(side_effect=AccessDenied('expired'))
@@ -86,7 +80,7 @@ class AccessTests(unittest.TestCase):
  def test_admin_pages(self):
   from streamlit.testing.v1 import AppTest
   at=AppTest.from_file('app.py',default_timeout=60); at.secrets['application']={'enabled':False}; at.run()
-  for page in ['Team & access','Master sheet']:
-   at.sidebar.radio[1].set_value(page).run(); self.assertFalse(at.exception,page)
+  for page in ['Team & access']:
+   at.sidebar.radio[0].set_value(page).run(); self.assertFalse(at.exception,page)
 
 if __name__=='__main__': unittest.main()

@@ -164,8 +164,8 @@ class AuthorizedStore:
      if previous and not permitted(user,table,previous.get('Project',previous.get('project')),True): raise AccessDenied('You cannot replace a record in another project.')
      r['actor']=user['email']
    clean['AccessAudit']=[audit('records.saved',','.join(changes),user['email'],json.dumps({k:[r['id'] for r in rows] for k,rows in changes.items()}))]
-   expected={**expected,'AccessAudit':{}}
-   self.raw.save_many(clean,expected)
+   expected={**expected,'AccessAudit':{},'_security_snapshot':hashlib.sha256(json.dumps({k:t[k] for k in SCHEMAS},sort_keys=True).encode()).hexdigest()}
+   return self.raw.save_many(clean,expected)
 
 def send_invitation(config,invitation,token,base_url):
  """Called only by the administrator's explicit Send invitation UI action."""

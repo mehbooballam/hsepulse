@@ -15,7 +15,14 @@ class MemoryStore:
             current={r['id']:r for r in self.tables[table]}
             check_conflicts(current,rows,expected)
             for row in rows:
-                row=deepcopy(row); row.update(revision=uid(),updated_at=stamp())
+                row={**current.get(row['id'],{}),**deepcopy(row)}
+                if not row.get('Record ID'):
+                    import re
+                    from datetime import datetime, timezone
+                    seq=max([r.get('Entry sequence',0) for r in current.values()]+[0])+1
+                    now=datetime.now(timezone.utc)
+                    row.update({'Record ID':f"{re.sub(r'^[0-9]+_', '', table).upper()}-{seq:06}-{now.strftime('%Y%m%dT%H%M%S%fZ')}",'Entry sequence':seq,'Created at':now.isoformat()})
+                row.update(revision=uid(),updated_at=stamp())
                 current[row['id']]=row
             self.tables[table]=list(current.values())
 
@@ -64,6 +71,9 @@ class GoogleSheetsStore:
 # Corporate schemas are registered here to avoid a circular dependency in domain.
 from enterprise import SCHEMAS as CORPORATE_SCHEMAS
 SCHEMAS.update(CORPORATE_SCHEMAS)
+for _columns in SCHEMAS.values():
+    for _field in ('Record ID','Entry sequence','Created at'):
+        if _field not in _columns: _columns.append(_field)
 
 def column_name(index):
     result=''

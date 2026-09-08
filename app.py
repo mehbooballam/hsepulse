@@ -9,7 +9,7 @@ import streamlit as st
 from catalog import RATES
 from domain import (SCHEMAS, today, uid, stamp, make_demo, evaluate, display,
                     performance, validate_record, record_id)
-from storage import MemoryStore, GoogleSheetsStore
+from storage import MemoryStore
 import enterprise
 import enterprise_ui
 import account_ui
@@ -27,28 +27,6 @@ h1 {letter-spacing:-1.4px;} h3 {letter-spacing:-.4px;}
 .stButton button {border-radius:9px;}
 </style>''',unsafe_allow_html=True)
 
-def config():
-    defaults=json.loads((ROOT/'backend.json').read_text()) if (ROOT/'backend.json').exists() else {}
-    try: secrets=dict(st.secrets)
-    except (FileNotFoundError,st.errors.StreamlitSecretNotFoundError): secrets={}
-    sheet_id=os.getenv('HSE_SPREADSHEET_ID') or secrets.get('spreadsheet_id') or defaults.get('spreadsheet_id','')
-    credentials=dict(secrets['gcp_service_account']) if secrets.get('gcp_service_account') else None
-    filename=os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-    if filename and credentials is None: credentials=json.loads(Path(filename).expanduser().read_text())
-    return sheet_id,credentials,defaults.get('url','')
-
-def setup():
-    st.title('Connect your organization')
-    st.write('The master administrator pastes a Google Sheets link to connect the organization’s master spreadsheet. Invited users work through the app with their assigned project permissions.')
-    st.markdown('1. Sign in as the master administrator.\n2. Open **Master sheet**.\n3. Share the spreadsheet with the displayed service-account email as Editor.\n4. Paste its link and select **Connect sheet**.\n5. Invite colleagues from **Team & access**.')
-    st.info('The application owner configures Supabase and a Sheets service account once in hosting secrets. Users sign in with email and password.')
-    st.link_button('Organization setup guide','https://github.com/mehbooballam/hsepulse#one-time-platform-setup')
-
-try: sheet_id,credentials,sheet_url=config()
-except Exception:
-    sheet_id,credentials,sheet_url='',None,''
-    st.error('Could not read connection settings. Check the credentials file path and TOML syntax.')
-
 try: application_settings=dict(st.secrets)
 except (FileNotFoundError,st.errors.StreamlitSecretNotFoundError): application_settings={}
 production=bool(application_settings.get('application',{}).get('enabled',False))
@@ -65,29 +43,21 @@ if production:
 with st.sidebar:
     st.markdown('## 🛡️ HSE Pulse')
     st.caption('Daily controls. Clear accountability.')
-    mode='Google Sheets' if production else st.radio('Data source',['Demo','Google Sheets'],index=1 if credentials else 0)
+    mode='Database' if production else 'Demo'
+    st.caption('Supabase database' if production else 'Demo workspace')
     area=st.selectbox('Application area',['Project management','Advanced KPI workspace'])
-    pages=(enterprise_ui.PAGES+(['Team & access','Master sheet'] if mode=='Demo' or (production and member['role']=='Administrator') else []) if area=='Project management' else ['Overview','Daily entry','KPI register','Corrective actions','Reports & export'])+['Google Sheets setup']
-    requested='Master sheet' if st.session_state.pop('open_connection',False) else st.query_params.get('view',pages[0])
+    pages=(enterprise_ui.PAGES+(['Team & access'] if mode=='Demo' or (production and member['role']=='Administrator') else []) if area=='Project management' else ['Overview','Daily entry','KPI register','Corrective actions','Reports & export'])+['Data & export']
+    requested=st.query_params.get('view',pages[0])
     page=st.radio('Workspace',pages,index=pages.index(requested) if requested in pages else 0)
     st.divider()
     st.caption('Reporting timezone: Asia/Riyadh')
-    if sheet_url and not production: st.link_button('Open Google Sheets',sheet_url)
-
-if page=='Google Sheets setup':
-    setup(); st.stop()
-
-if mode=='Google Sheets' and not credentials and not production:
-    st.warning('Organization sign-in and Google connection are not configured yet. The application owner needs to complete the one-time hosting setup.')
-    setup(); st.stop()
-
-key='demo_store_v2' if mode=='Demo' else 'google_store_v2'
+key='demo_store_v2' if mode=='Demo' else 'database_store_v3'
 try:
     if production:
         st.session_state[key]=AuthorizedStore(organization,claims,lambda:__import__('supabase_login').validate_current(application_settings))
         st.session_state.pop(key+'_data',None)
     if key not in st.session_state:
-        st.session_state[key]=MemoryStore({**make_demo(),**enterprise.demo()}) if mode=='Demo' else GoogleSheetsStore(sheet_id,credentials)
+        st.session_state[key]=MemoryStore({**make_demo(),**enterprise.demo()})
     store=st.session_state[key]
     data_key=key+'_data'
     if data_key not in st.session_state:
@@ -97,13 +67,13 @@ try:
         st.rerun()
     tables=st.session_state[data_key]
 except Exception as exc:
-    st.error(f'Google Sheets connection failed ({type(exc).__name__}). Check API access, workbook sharing and the connection settings. No data was saved.')
+    st.error(f'Database unavailable ({type(exc).__name__}). Refresh or contact the administrator. No data was saved.')
     st.stop()
 
-if mode=='Demo': st.info('DEMO WORKSPACE · Synthetic data. Changes last only for this browser session and are never sent to Google Sheets.')
+if mode=='Demo': st.info('DEMO WORKSPACE · Synthetic data. Changes last only for this browser session and are never sent to the database.')
 if 'flash' in st.session_state: st.success(st.session_state.pop('flash'))
 st.sidebar.caption('Last loaded: '+st.session_state[key+'_sync'][:19].replace('T',' ')+' UTC')
-if page in ('Team & access','Master sheet'):
+if page=='Team & access':
     if production:
         raw,who=organization,claims
     else:
@@ -112,17 +82,15 @@ if page in ('Team & access','Master sheet'):
         for table in ACCOUNT_SCHEMAS: store.tables.setdefault(table,[])
         MembershipService(store).bootstrap(who,'admin@example.test')
         raw=store
-    if page=='Team & access': account_ui.team_page(raw,who,application_settings,demo=not production)
-    else: account_ui.connection_page(accounts if production else None,raw,who,application_settings,demo=not production)
+    account_ui.team_page(raw,who,application_settings,demo=not production)
     st.stop()
-if production and not organization.sheets:
-    st.title('Welcome to your organization')
-    st.info('The master administrator needs to connect a Google spreadsheet from Master sheet before project reporting can begin.')
-    st.stop()
+if page=='Data & export':
+    from export_ui import render_exports
+    render_exports(store); st.stop()
 if page in enterprise_ui.PAGES:
     enterprise_ui.render(page,store,mode); st.stop()
 # Legacy KPI workspace is corporate-only when live, to prevent unscoped exports.
-if mode=='Google Sheets':
+if mode=='Database':
     role,assigned,actor=enterprise_ui.identity(mode)
     if role!='Corporate manager':
         st.info('The advanced KPI workspace is restricted to corporate managers. Use your project workspace.'); st.stop()
@@ -139,7 +107,7 @@ def commit(table,rows):
         return False
     # A readback failure must not make a successful write look like a failed save.
     st.session_state.pop(data_key,None)
-    st.session_state['flash']=f'Saved {len(rows)} record(s) to '+('the demo session.' if mode=='Demo' else 'Google Sheets.')
+    st.session_state['flash']=f'Saved {len(rows)} record(s) to '+('the demo session.' if mode=='Demo' else 'the database.')
     st.rerun()
 
 def scoped_records(start,end,site_ids,shift):
@@ -237,7 +205,7 @@ if page in ('Overview','Reports & export'):
             for name,rows in tables.items():
                 archive.writestr(f'{name}.csv',csv_bytes(pd.DataFrame(rows,columns=SCHEMAS[name])))
         st.download_button('Download all current data (ZIP)',exports.getvalue(),'hse-backup.zip','application/zip')
-        st.caption('Backup includes all sites and dates, current definitions, records and actions. Prior revisions remain in Google Sheets.')
+        st.caption('Backup includes all sites and dates, current definitions, records and actions. Prior revisions remain in the database.')
         st.dataframe(pd.DataFrame(records,columns=SCHEMAS['Records']),hide_index=True)
         st.download_button('Download filtered records CSV',csv_bytes(pd.DataFrame(records,columns=SCHEMAS['Records'])),'hse-records.csv','text/csv')
         st.subheader('Import daily records')
