@@ -1,3 +1,4 @@
+-c requirements.lock
 streamlit[auth]>=1.63,<2
 pandas>=2.2,<3
 gspread>=6.1,<7
@@ -6,3 +7,4 @@ SQLAlchemy>=2.0,<3
 psycopg[binary]>=3.2,<4
 cryptography>=45,<51
 google-auth-oauthlib>=1.2,<2
+supabase==2.31.0

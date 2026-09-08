@@ -1,86 +1,70 @@
-# HSE Pulse — organization application
+# HSE Pulse — Supabase accounts + Google Sheets
 
-The current rebuild adds verified Google sign-in, email invitations, managed roles,
-project assignments, account suspension, access audit history and a master-admin
-Google OAuth connection. HSE records stay in Google Sheets. Account metadata and
-Google refresh tokens are encrypted in a private PostgreSQL schema. Users never
-upload service-account JSON or connect their own spreadsheet.
-
-**Live activation is not complete until the owner configures the platform services.**
-Without organization settings the app remains an explicitly labelled, temporary demo.
-The previous service-account and static-email configuration below is legacy mode.
-Use `.streamlit/organization.secrets.example.toml` for the rebuilt application.
-
-## Master-admin experience
-
-1. Sign in using the bootstrap administrator email configured once by the app owner.
-2. Open **Master sheet → Connect Google → Continue to Google**.
-3. Authorize Sheets access, then create a new master sheet or select an existing
-   Google spreadsheet. Confirm **Set as master sheet**. The app initializes its
-   registers and stops if an existing register has incompatible headers. Other tabs
-   are preserved. An Excel template must be converted to a native Google spreadsheet;
-   its display/dashboard tabs do not become app data without compatible headers.
-4. Open **Team & access → Invitations**, enter an email, role and projects, then send.
-5. The recipient opens the invitation, signs in with that verified Google email,
-   and accepts. If Google's login redirects to the home page, reopening the original
-   invitation after sign-in restores the acceptance screen.
-
-Administrators manage users and Google connections. Corporate managers manage HSE
-records across projects but cannot grant access or reconnect the master sheet.
-Corporate viewers only read; project roles operate within assigned projects.
-Authorization is enforced again at the storage boundary, including old record IDs,
-exports, writes and dashboard refreshes. Suspended accounts are rejected at the next
-request; data already rendered in a browser cannot be recalled. A system cannot
-suspend the last active administrator. Invite tokens are random, hashed at rest,
-expire in 1–14 days, and can only be used once by the matching verified identity.
-Re-inviting invalidates older pending links. No real invitations were sent during development.
+Google Sheets remains the master HSE data source. Supabase provides email/password
+login, invitation emails, password recovery and the encrypted account database.
+There is no separate PostgreSQL service or database password in the app config.
 
 ## One-time platform setup
 
-Configure the values from `.streamlit/organization.secrets.example.toml` in
-Streamlit **Manage app → Settings → Secrets**:
+1. Create a Supabase project and run `supabase/setup.sql` in its SQL Editor.
+   The table is protected by RLS and denies `anon` and `authenticated` access;
+   only the server API key can read and update encrypted account metadata.
+2. In Authentication, disable public signups and anonymous sign-in, keep email
+   confirmation enabled, and set the Site URL to the deployed app URL.
+   Allow redirects to `https://hsepulse-dashboard.streamlit.app/**`.
+3. Copy `.streamlit/organization.secrets.example.toml` into hosting Secrets.
+   Set the project URL, publishable key, server secret key, bootstrap administrator
+   email and a Fernet key generated once and backed up securely.
+4. Invite the bootstrap administrator through Supabase Auth. The recipient opens
+   the email, confirms their account in the app and chooses their own password.
+   The verified configured email becomes the first administrator exactly once.
+5. Configure Google OAuth under `[google_connection]`, enabling Sheets and Drive
+   APIs. Register the deployed root URL with a trailing slash as its callback.
+   The administrator opens **Master sheet**, connects Google, and chooses or creates
+   the master spreadsheet. Team members do not need direct spreadsheet access.
+6. Invite colleagues from **Team & access**, assigning a role and project scope.
 
-- Google OAuth **Web application** client and a strong OIDC cookie secret.
-  Enable Google Sheets API and Google Drive API, configure the OAuth consent screen,
-  and register both `https://hsepulse-dashboard.streamlit.app/oauth2callback` (login)
-  and `https://hsepulse-dashboard.streamlit.app/` (Google connection). In testing,
-  add the relevant Google accounts as test users. Google may require app verification
-  for production use of the requested scopes. Test-mode offline grants may expire.
-- A persistent PostgreSQL database URL with TLS and a dedicated server-side database
-  owner permitted to create `hsepulse_private`. This schema is not for a public REST
-  API. The app revokes PUBLIC schema/table access and enables RLS; only the trusted
-  server database owner accesses it. Do not expose database credentials to clients.
-- A Fernet encryption key generated once with
-  `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
-  Keep it in hosting secrets and back it up separately. Losing/changing it without
-  migrating ciphertext makes stored connections and memberships unreadable.
-- An SMTP provider with TLS and a verified sending address for invitations.
-- `bootstrap_admin_email` and the deployed `public_url`.
+Standard Supabase invitation/recovery emails are supported by a same-origin
+callback component. It removes token fragments from the browser address, validates
+identity with Supabase and asks the recipient to confirm the displayed email.
+It does not place tokens in query parameters or browser local storage. Sessions
+are held in Streamlit session state; a browser reload may require signing in again.
+Custom email templates in `supabase/email-templates/` are optional.
 
-Google authorization uses state, PKCE, a ten-minute callback deadline, an authenticated
-admin binding and one-use state consumption. Offline refresh tokens are encrypted
-in PostgreSQL and never placed in the HSE spreadsheet or browser-visible configuration.
-The requested scopes permit spreadsheet access and listing spreadsheet metadata;
-Google's grant is broader than the selected sheet, while the application limits
-operational reads/writes to the configured master sheet. Disconnect removes the app's
-stored token; revoke the OAuth grant in Google Account permissions if needed.
+Supabase's default mail service has recipient and rate restrictions. Configure a
+custom SMTP provider in Supabase before inviting the wider team. The app has no
+separate SMTP secrets. Mail delivery failures remain visible in invitation status.
 
-## Verification and operational boundaries
+## Roles and authorization
 
-Run `.venv/bin/python -m unittest test_app test_enterprise test_access -q`.
-Membership changes use database version checks plus a complete security snapshot,
-so concurrent changes fail instead of silently overwriting permissions. This build
-serves one organization per deployment. PostgreSQL stores the encrypted organization
-metadata as one transactional aggregate; high-volume audit retention should be moved
-to a dedicated audit store before scaling to many organizations.
+Administrators manage membership and the Google connection. Corporate managers
+manage HSE records across projects; corporate viewers have read access. Project
+managers, HSE officers and project leads can submit within assigned projects;
+project viewers are read-only. Permissions come from protected server-side records,
+never user-editable Supabase metadata. Suspensions and role changes are checked on
+each app request and storage access. The last active administrator cannot be removed.
 
-Google Sheets operational writes remain subject to Sheets quotas and its lack of
-cross-process conditional writes. Keep one application writer process and restrict
-manual sheet access to administrators. The database records write intent before a
-Sheets mutation and completion afterward; this is not an atomic transaction across
-Google and PostgreSQL. A failed completion audit remains a visible write intent.
-Live OAuth, SMTP delivery and hosted PostgreSQL require actual provider credentials
-for end-to-end verification; local tests use mocks and an encrypted test database.
+Invitation grants are email-bound, hashed, expiring and single-use. Revoking or
+reissuing an invitation invalidates its old workspace grant, even if a Supabase
+email session was already issued. Supabase identity alone grants no project access.
+
+## Verification and boundaries
+
+Run `.venv/bin/python -m unittest test_app test_enterprise test_access test_supabase_login -q`.
+Tests use isolated demo accounts and mocks, never live hosting secrets. Live database
+checks should additionally confirm the server connection and denied public access.
+Dependencies are pinned with `requirements.lock`.
+
+One organization is supported per deployment. Account metadata and audit history
+use one encrypted aggregate with an atomic version check to reject concurrent updates.
+Back up the Fernet key separately: losing it makes the stored data unreadable.
+Google Sheets has no cross-process conditional writes; use one application writer
+and restrict manual editing. Account audit writes and Sheets updates are not one
+cross-service transaction. Audit history should be moved into a dedicated table
+before high-volume use. Existing Google OIDC memberships are not automatically
+rebound to Supabase identities; migration requires an explicit administrator process.
+
+The material below describes the legacy service-account/demo setup.
 
 ---
 

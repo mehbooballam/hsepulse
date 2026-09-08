@@ -31,7 +31,7 @@ class EnterpriseTests(unittest.TestCase):
   t['06_PERMITS']=[{'id':'p','Project':'P01','Status':'Active','Expiry Date':now.isoformat()}]
   self.assertTrue(any(a['Level']=='Red' and a['Record']=='p' for a in e.alerts(t,now)))
  def test_all_pages_forms_and_scopes(self):
-  at=AppTest.from_file('app.py',default_timeout=60).run()
+  at=AppTest.from_file('app.py',default_timeout=60); at.secrets['application']={'enabled':False}; at.run()
   for page in ['Corporate dashboard','Project dashboards','Field forms','Operational registers','Alerts & decisions','Standards library','Management report','Project settings']:
    at.sidebar.radio[1].set_value(page).run(); self.assertFalse(at.exception,page)
   at.sidebar.radio[1].set_value('Field forms').run()

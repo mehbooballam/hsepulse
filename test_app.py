@@ -60,7 +60,7 @@ class DomainTests(unittest.TestCase):
 class UITests(unittest.TestCase):
     def test_pages_and_action_save(self):
         from streamlit.testing.v1 import AppTest
-        at=AppTest.from_file('app.py',default_timeout=60).run()
+        at=AppTest.from_file('app.py',default_timeout=60); at.secrets['application']={'enabled':False}; at.run()
         self.assertFalse(at.exception)
         next(x for x in at.selectbox if x.label=='Application area').set_value('Advanced KPI workspace').run()
         for page in ['Daily entry','KPI register','Corrective actions','Reports & export','Google Sheets setup']:

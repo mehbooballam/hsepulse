@@ -4,28 +4,18 @@ import streamlit as st
 import pandas as pd
 from access_control import MembershipService, principal, ROLES, assignments, send_invitation, AccessDenied
 
-def sign_in(settings):
- st.title('Welcome to HSE Pulse')
- st.write('Your projects. Your team. One secure workspace.')
- st.caption('Sign in with your work account. New team members need an invitation from their administrator.')
- if st.button('Continue with Google',type='primary',width='stretch'): st.login()
-
 def production_context(settings):
- from account_store import AccountStore, OrganizationStore
+ from account_store import OrganizationStore
+ from supabase_account_store import SupabaseAccountStore
  from google_connection import operational_store, complete
+ from supabase_login import authenticate, sign_out
  app=dict(settings.get('application',{}))
- if not app.get('database_url') or not app.get('encryption_key') or not settings.get('auth'):
-  st.title('Organization setup'); st.info('The application owner must configure the authentication client, persistent database and encryption key in hosting secrets.'); st.stop()
- if not app['database_url'].startswith(('postgresql://','postgresql+psycopg://')):
-  st.error('Hosted organization mode requires a persistent PostgreSQL database. SQLite is reserved for tests.'); st.stop()
- if not st.user.is_logged_in:
-  # Invitation query survives an OAuth redirect via a user-held code: paste it after login if provider clears it.
-  if st.query_params.get('invitation'): st.info('Sign in using the invited email. If the invitation page is not restored, reopen the invitation email after signing in.')
-  sign_in(settings); st.stop()
- claims=dict(st.user)
+ if not app.get('encryption_key') or not all(settings.get('supabase',{}).get(k) for k in ('url','publishable_key','secret_key')):
+  st.title('Organization setup'); st.info('The application owner must configure the Supabase Auth, Supabase database connection and encryption key in hosting secrets.'); st.stop()
+ claims,auth=authenticate(settings)
  @st.cache_resource
- def account_db(url,key): return AccountStore(url,key)
- accounts=account_db(app['database_url'],app['encryption_key'])
+ def account_db(config,key): return SupabaseAccountStore(config,key)
+ accounts=account_db(dict(settings['supabase']),app['encryption_key'])
  raw=OrganizationStore(accounts)
  service=MembershipService(raw)
  if not accounts.read()['Users']:
@@ -37,12 +27,12 @@ def production_context(settings):
   if st.button('Accept invitation',type='primary'):
    try: service.accept(claims,token); st.query_params.clear(); st.rerun()
    except ValueError as exc: st.error(str(exc))
-  if st.button('Use another account'): st.logout()
+  if st.button('Use another account'): sign_out(auth)
   st.stop()
  try: user=principal(accounts.read(),claims)
  except AccessDenied as exc:
   st.title('Access pending'); st.info(str(exc))
-  if st.button('Sign out'): st.logout()
+  if st.button('Sign out'): sign_out(auth)
   st.stop()
  if st.query_params.get('error'):
   st.warning('Google connection was not approved. You can try again from Master sheet.'); st.query_params.clear()
@@ -50,7 +40,7 @@ def production_context(settings):
   try: complete(accounts,claims,dict(settings['google_connection']),st.query_params['state'],st.query_params['code']); st.query_params.clear(); st.session_state['open_connection']=True; st.rerun()
   except ValueError as exc: st.error(str(exc)); st.stop()
   except Exception: st.error('Google authorization could not be completed. Return to Master sheet and reconnect.'); st.query_params.clear(); st.stop()
- if st.sidebar.button('Sign out'): st.session_state.clear(); st.logout()
+ if st.sidebar.button('Sign out'): sign_out(auth)
  st.sidebar.caption(user['email']+' · '+user['role'])
  # Connection failures still permit administrator repair screens.
  try: sheets=operational_store(accounts)
@@ -75,7 +65,7 @@ def team_page(raw,claims,settings,demo=False):
     try: service.change_user(claims,target,role,projects,status); st.success('Access updated. It is checked again on every request and dashboard refresh.'); st.rerun()
     except ValueError as exc: st.error(str(exc))
  with invites:
-  smtp=dict(settings.get('smtp',{})); ready=all(smtp.get(k) for k in ('host','username','password','from_email')) and not demo
+  supabase=dict(settings.get('supabase',{})); ready=bool(supabase.get('secret_key')) and not demo
   if not ready: st.info('Email delivery is not configured. You can preview invitation creation; no email will be sent.')
   with st.form('invite_member'):
    email=st.text_input('Email address'); role=st.selectbox('Invitation role',ROLES,index=ROLES.index('Project viewer'))
@@ -85,7 +75,9 @@ def team_page(raw,claims,settings,demo=False):
    try:
     inv,token=service.invite(claims,email,role,projects,days)
     if ready:
-     try: send_invitation(smtp,inv,token,settings['application']['public_url'])
+     try:
+      from supabase_login import invite
+      invite(supabase,inv,token,settings['application']['public_url'])
      except Exception:
       service.delivery(claims,inv['id'],'Unconfirmed'); st.error('Email delivery could not be confirmed. Re-invite to issue a new link; the old link will be revoked.')
      else: service.delivery(claims,inv['id'],'Sent'); st.success('Invitation email sent.')
@@ -97,7 +89,7 @@ def team_page(raw,claims,settings,demo=False):
   if pending:
    selected=st.selectbox('Pending invitation',[r['id'] for r in pending],format_func=lambda x:next(r['email'] for r in pending if r['id']==x))
    if st.button('Revoke invitation'): service.revoke(claims,selected); st.rerun()
-  st.caption('Re-inviting the same email revokes its earlier pending links. Invitation links expire and require the matching verified Google identity.')
+  st.caption('Re-inviting the same email revokes its earlier pending links. Invitation links expire and require the matching verified Supabase account.')
  with roles:
   st.dataframe(pd.DataFrame([
    {'Role':'Administrator','Scope':'All projects','Manage team':'Yes','Connect master sheet':'Yes','Submit/edit':'All areas'},

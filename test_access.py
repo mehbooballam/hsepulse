@@ -102,7 +102,7 @@ class AccessTests(unittest.TestCase):
   with db.engine.connect() as c: self.assertNotIn('private-refresh',c.execute(db.table.select()).mappings().one()['payload'])
  def test_admin_pages(self):
   from streamlit.testing.v1 import AppTest
-  at=AppTest.from_file('app.py',default_timeout=60).run()
+  at=AppTest.from_file('app.py',default_timeout=60); at.secrets['application']={'enabled':False}; at.run()
   for page in ['Team & access','Master sheet']:
    at.sidebar.radio[1].set_value(page).run(); self.assertFalse(at.exception,page)
 
