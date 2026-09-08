@@ -9,3 +9,8 @@ data/
 node_modules
 outputs/
 backend.json
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*

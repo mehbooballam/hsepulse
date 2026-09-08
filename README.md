@@ -1,3 +1,89 @@
+# HSE Pulse — organization application
+
+The current rebuild adds verified Google sign-in, email invitations, managed roles,
+project assignments, account suspension, access audit history and a master-admin
+Google OAuth connection. HSE records stay in Google Sheets. Account metadata and
+Google refresh tokens are encrypted in a private PostgreSQL schema. Users never
+upload service-account JSON or connect their own spreadsheet.
+
+**Live activation is not complete until the owner configures the platform services.**
+Without organization settings the app remains an explicitly labelled, temporary demo.
+The previous service-account and static-email configuration below is legacy mode.
+Use `.streamlit/organization.secrets.example.toml` for the rebuilt application.
+
+## Master-admin experience
+
+1. Sign in using the bootstrap administrator email configured once by the app owner.
+2. Open **Master sheet → Connect Google → Continue to Google**.
+3. Authorize Sheets access, then create a new master sheet or select an existing
+   Google spreadsheet. Confirm **Set as master sheet**. The app initializes its
+   registers and stops if an existing register has incompatible headers. Other tabs
+   are preserved. An Excel template must be converted to a native Google spreadsheet;
+   its display/dashboard tabs do not become app data without compatible headers.
+4. Open **Team & access → Invitations**, enter an email, role and projects, then send.
+5. The recipient opens the invitation, signs in with that verified Google email,
+   and accepts. If Google's login redirects to the home page, reopening the original
+   invitation after sign-in restores the acceptance screen.
+
+Administrators manage users and Google connections. Corporate managers manage HSE
+records across projects but cannot grant access or reconnect the master sheet.
+Corporate viewers only read; project roles operate within assigned projects.
+Authorization is enforced again at the storage boundary, including old record IDs,
+exports, writes and dashboard refreshes. Suspended accounts are rejected at the next
+request; data already rendered in a browser cannot be recalled. A system cannot
+suspend the last active administrator. Invite tokens are random, hashed at rest,
+expire in 1–14 days, and can only be used once by the matching verified identity.
+Re-inviting invalidates older pending links. No real invitations were sent during development.
+
+## One-time platform setup
+
+Configure the values from `.streamlit/organization.secrets.example.toml` in
+Streamlit **Manage app → Settings → Secrets**:
+
+- Google OAuth **Web application** client and a strong OIDC cookie secret.
+  Enable Google Sheets API and Google Drive API, configure the OAuth consent screen,
+  and register both `https://hsepulse-dashboard.streamlit.app/oauth2callback` (login)
+  and `https://hsepulse-dashboard.streamlit.app/` (Google connection). In testing,
+  add the relevant Google accounts as test users. Google may require app verification
+  for production use of the requested scopes. Test-mode offline grants may expire.
+- A persistent PostgreSQL database URL with TLS and a dedicated server-side database
+  owner permitted to create `hsepulse_private`. This schema is not for a public REST
+  API. The app revokes PUBLIC schema/table access and enables RLS; only the trusted
+  server database owner accesses it. Do not expose database credentials to clients.
+- A Fernet encryption key generated once with
+  `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+  Keep it in hosting secrets and back it up separately. Losing/changing it without
+  migrating ciphertext makes stored connections and memberships unreadable.
+- An SMTP provider with TLS and a verified sending address for invitations.
+- `bootstrap_admin_email` and the deployed `public_url`.
+
+Google authorization uses state, PKCE, a ten-minute callback deadline, an authenticated
+admin binding and one-use state consumption. Offline refresh tokens are encrypted
+in PostgreSQL and never placed in the HSE spreadsheet or browser-visible configuration.
+The requested scopes permit spreadsheet access and listing spreadsheet metadata;
+Google's grant is broader than the selected sheet, while the application limits
+operational reads/writes to the configured master sheet. Disconnect removes the app's
+stored token; revoke the OAuth grant in Google Account permissions if needed.
+
+## Verification and operational boundaries
+
+Run `.venv/bin/python -m unittest test_app test_enterprise test_access -q`.
+Membership changes use database version checks plus a complete security snapshot,
+so concurrent changes fail instead of silently overwriting permissions. This build
+serves one organization per deployment. PostgreSQL stores the encrypted organization
+metadata as one transactional aggregate; high-volume audit retention should be moved
+to a dedicated audit store before scaling to many organizations.
+
+Google Sheets operational writes remain subject to Sheets quotas and its lack of
+cross-process conditional writes. Keep one application writer process and restrict
+manual sheet access to administrators. The database records write intent before a
+Sheets mutation and completion afterward; this is not an atomic transaction across
+Google and PostgreSQL. A failed completion audit remains a visible write intent.
+Live OAuth, SMTP delivery and hosted PostgreSQL require actual provider credentials
+for end-to-end verification; local tests use mocks and an encrypted test database.
+
+---
+
 # HSE Pulse
 
 Streamlit dashboard for daily health, safety and environmental performance, with Google Sheets as its only live persistent backend.

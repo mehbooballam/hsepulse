@@ -11,6 +11,8 @@ PAGES=['Corporate dashboard','Project dashboards','Field forms','Operational reg
 COLORS={'Green':'#168563','Amber':'#b88400','Orange':'#e27025','Red':'#dc4255','Gray':'#798596'}
 
 def identity(mode):
+ if mode=='Google Sheets' and st.session_state.get('authenticated_identity'):
+  return st.session_state['authenticated_identity']
  if mode=='Demo':
   with st.sidebar.expander('Preview access roles'):
    role=st.selectbox('Role',['Corporate manager','Corporate viewer','Project manager','HSE officer','Project lead','Project viewer'])

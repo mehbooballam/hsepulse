@@ -12,6 +12,8 @@ from domain import (SCHEMAS, today, uid, stamp, make_demo, evaluate, display,
 from storage import MemoryStore, GoogleSheetsStore
 import enterprise
 import enterprise_ui
+import account_ui
+from access_control import AuthorizedStore, SCHEMAS as ACCOUNT_SCHEMAS
 
 ROOT=Path(__file__).parent
 st.set_page_config(page_title='HSE Pulse',page_icon='🛡️',layout='wide')
@@ -55,27 +57,43 @@ except Exception:
     sheet_id,credentials,sheet_url='',None,''
     st.error('Could not read connection settings. Check the credentials file path and TOML syntax.')
 
+try: application_settings=dict(st.secrets)
+except (FileNotFoundError,st.errors.StreamlitSecretNotFoundError): application_settings={}
+production=bool(application_settings.get('application',{}).get('enabled',False))
+production_context=None
+if production:
+    try: production_context=account_ui.production_context(application_settings)
+    except ValueError as exc: st.error(str(exc)); st.stop()
+    except Exception: st.error('Organization services are unavailable. Contact the application administrator.'); st.stop()
+    accounts,organization,claims,member=production_context
+    st.session_state['authenticated_identity']=(
+        'Corporate manager' if member['role']=='Administrator' else member['role'],
+        __import__('access_control').assignments(member),member['email'])
+
 with st.sidebar:
     st.markdown('## 🛡️ HSE Pulse')
     st.caption('Daily controls. Clear accountability.')
-    mode=st.radio('Data source',['Demo','Google Sheets'],index=1 if credentials else 0)
+    mode='Google Sheets' if production else st.radio('Data source',['Demo','Google Sheets'],index=1 if credentials else 0)
     area=st.selectbox('Application area',['Project management','Advanced KPI workspace'])
-    pages=(enterprise_ui.PAGES if area=='Project management' else ['Overview','Daily entry','KPI register','Corrective actions','Reports & export'])+['Google Sheets setup']
-    requested=st.query_params.get('view',pages[0])
+    pages=(enterprise_ui.PAGES+(['Team & access','Master sheet'] if mode=='Demo' or (production and member['role']=='Administrator') else []) if area=='Project management' else ['Overview','Daily entry','KPI register','Corrective actions','Reports & export'])+['Google Sheets setup']
+    requested='Master sheet' if st.session_state.pop('open_connection',False) else st.query_params.get('view',pages[0])
     page=st.radio('Workspace',pages,index=pages.index(requested) if requested in pages else 0)
     st.divider()
     st.caption('Reporting timezone: Asia/Riyadh')
-    if sheet_url: st.link_button('Open Google Sheets',sheet_url)
+    if sheet_url and not production: st.link_button('Open Google Sheets',sheet_url)
 
 if page=='Google Sheets setup':
     setup(); st.stop()
 
-if mode=='Google Sheets' and not credentials:
+if mode=='Google Sheets' and not credentials and not production:
     st.warning('Google Sheets is not connected yet. Add service-account credentials to enable live storage.')
     setup(); st.stop()
 
 key='demo_store_v2' if mode=='Demo' else 'google_store_v2'
 try:
+    if production:
+        st.session_state[key]=AuthorizedStore(organization,claims)
+        st.session_state.pop(key+'_data',None)
     if key not in st.session_state:
         st.session_state[key]=MemoryStore({**make_demo(),**enterprise.demo()}) if mode=='Demo' else GoogleSheetsStore(sheet_id,credentials)
     store=st.session_state[key]
@@ -93,6 +111,22 @@ except Exception as exc:
 if mode=='Demo': st.info('DEMO WORKSPACE · Synthetic data. Changes last only for this browser session and are never sent to Google Sheets.')
 if 'flash' in st.session_state: st.success(st.session_state.pop('flash'))
 st.sidebar.caption('Last loaded: '+st.session_state[key+'_sync'][:19].replace('T',' ')+' UTC')
+if page in ('Team & access','Master sheet'):
+    if production:
+        raw,who=organization,claims
+    else:
+        from access_control import MembershipService
+        who={'email':'admin@example.test','email_verified':True,'sub':'demo-admin','iss':'demo','name':'Demo administrator'}
+        for table in ACCOUNT_SCHEMAS: store.tables.setdefault(table,[])
+        MembershipService(store).bootstrap(who,'admin@example.test')
+        raw=store
+    if page=='Team & access': account_ui.team_page(raw,who,application_settings,demo=not production)
+    else: account_ui.connection_page(accounts if production else None,raw,who,application_settings,demo=not production)
+    st.stop()
+if production and not organization.sheets:
+    st.title('Welcome to your organization')
+    st.info('The master administrator needs to connect a Google spreadsheet from Master sheet before project reporting can begin.')
+    st.stop()
 if page in enterprise_ui.PAGES:
     enterprise_ui.render(page,store,mode); st.stop()
 # Legacy KPI workspace is corporate-only when live, to prevent unscoped exports.
