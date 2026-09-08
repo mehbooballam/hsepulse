@@ -185,12 +185,9 @@ if page in ('Overview','Reports & export'):
     st.download_button('Download KPI summary CSV',csv_bytes(report),f'hse-summary-{start}-{end}.csv','text/csv')
     if page=='Reports & export':
         st.subheader('Records and backups')
-        exports=io.BytesIO()
-        with zipfile.ZipFile(exports,'w',zipfile.ZIP_DEFLATED) as archive:
-            for name,rows in tables.items():
-                archive.writestr(f'{name}.csv',csv_bytes(pd.DataFrame(rows,columns=SCHEMAS[name])))
-        st.download_button('Download all current data (ZIP)',exports.getvalue(),'hse-backup.zip','application/zip')
-        st.caption('Backup includes all sites and dates, current definitions, records and actions. Prior revisions remain in the database.')
+        from export_ui import archive_bytes
+        st.download_button('Download all current data (ZIP)',archive_bytes(tables),'hse-backup.zip','application/zip')
+        st.caption('Backup includes all accessible operational categories as CSV and JSON. Account data is exported separately from Team & access. Prior revisions remain in the database.')
         st.dataframe(pd.DataFrame(records,columns=SCHEMAS['Records']),hide_index=True)
         st.download_button('Download filtered records CSV',csv_bytes(pd.DataFrame(records,columns=SCHEMAS['Records'])),'hse-records.csv','text/csv')
         st.subheader('Import daily records')

@@ -30,6 +30,14 @@ class DatabaseTests(unittest.TestCase):
    self.assertIn('Man-hours',z.read('03_DAILY_REPORT.csv').decode('utf-8-sig'))
    self.assertIn("'=1+1",z.read('05_INCIDENTS.csv').decode('utf-8-sig'))
    self.assertEqual(json.loads(z.read('05_INCIDENTS.json'))[0]['Custom field'],'retained')
+ def test_operational_backup_excludes_account_and_unknown_tables(self):
+  tables={'Records':[{'id':'record','notes':'preserved'}],
+          'Users':[{'email':'private@example.com'}],
+          'Invitations':[{'token_hash':'private-token'}],
+          'AccessAudit':[], 'UnknownCategory':[{'secret':'private'}]}
+  with zipfile.ZipFile(io.BytesIO(archive_bytes(tables))) as z:
+   self.assertEqual(set(z.namelist()),{'Records.csv','Records.json'})
+   self.assertEqual(json.loads(z.read('Records.json'))[0]['notes'],'preserved')
  def test_pagination_does_not_truncate_at_api_limit(self):
   accounts=Mock();accounts.read.return_value={}
   query=accounts.api.table.return_value.select.return_value.order.return_value.order.return_value
