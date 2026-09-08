@@ -126,3 +126,9 @@ Dashboards refresh every 30 seconds while open and show a toast for newly trigge
 ### Verification
 
 Run `.venv/bin/python -m unittest test_app test_enterprise -q`. Tests cover all workspace pages and forms, saved submissions, role scope, weighted legacy KPIs, corporate exposure rates, missing-data states, closure clocks, permit expiry, atomic conflict handling and literal Google Sheets input handling.
+
+## Streamlit Community Cloud deployment
+
+Deploy repository `mehbooballam/hsepulse`, branch `main`, main file **`app.py`**. Select Python 3.11 under Advanced settings. `start.sh` is only the local launch script and must not be selected as the cloud entry point. Without secrets the deployed app opens in temporary demo mode. Configure the Google service account and OIDC access settings in Streamlit's Secrets interface to enable live project records.
+
+The shared theme configuration leaves network binding to the hosting platform. The local `start.sh` explicitly binds to 127.0.0.1. Default dashboard links automatically follow the deployed app URL.
