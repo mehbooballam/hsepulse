@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+data/
+*.pyc
+.DS_Store
+.streamlit/secrets.toml
+*credentials*.json
+*service-account*.json
+node_modules
+outputs/
+backend.json
