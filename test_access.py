@@ -63,15 +63,6 @@ class AccessTests(unittest.TestCase):
   with db.engine.connect() as conn:
    payload=conn.execute(db.table.select()).mappings().one()['payload']; self.assertNotIn('private@example.com',payload)
   with self.assertRaises(ConflictError): db.save('Users',[row],{})
- def test_oauth_state_and_master_admin_only(self):
-  import google_connection as gc
-  from account_store import AccountStore,OrganizationStore
-  from cryptography.fernet import Fernet
-  db=AccountStore('sqlite:///:memory:',Fernet.generate_key()); svc=MembershipService(OrganizationStore(db)); svc.bootstrap(ADMIN,ADMIN['email'])
-  config={'client_id':'client','client_secret':'secret','redirect_uri':'https://app.example.com/'}
-  url=gc.begin(db,ADMIN,config); self.assertIn('code_challenge=',url)
-  with self.assertRaises(AccessDenied): gc.complete(db,ADMIN,config,'wrong','fake')
-  self.assertTrue(db.document()['pending_google'])
  def test_stale_security_snapshot_rejected(self):
   from account_store import AccountStore,OrganizationStore
   from cryptography.fernet import Fernet
@@ -86,20 +77,6 @@ class AccessTests(unittest.TestCase):
   book=Mock(); worksheet=Mock(); worksheet.title='Projects'; worksheet.row_values.return_value=['wrong header']; book.worksheets.return_value=[worksheet]
   with self.assertRaises(ValueError): initialize(book)
   book.add_worksheet.assert_not_called(); worksheet.update.assert_not_called()
- def test_google_callback_is_one_use_and_encrypted(self):
-  import google_connection as gc
-  from account_store import AccountStore,OrganizationStore
-  from cryptography.fernet import Fernet
-  from unittest.mock import Mock
-  from urllib.parse import urlparse,parse_qs
-  db=AccountStore('sqlite:///:memory:',Fernet.generate_key()); svc=MembershipService(OrganizationStore(db)); svc.bootstrap(ADMIN,ADMIN['email'])
-  config={'client_id':'client','client_secret':'secret','redirect_uri':'https://app.example.com/'}
-  state=parse_qs(urlparse(gc.begin(db,ADMIN,config)).query)['state'][0]
-  oauth=Mock(); oauth.credentials.refresh_token='private-refresh'; oauth.credentials.to_json.return_value=json.dumps({'refresh_token':'private-refresh'})
-  with patch.object(gc,'flow',return_value=oauth): gc.complete(db,ADMIN,config,state,'code')
-  self.assertEqual(db.document()['candidate_google']['credentials']['refresh_token'],'private-refresh')
-  with self.assertRaises(AccessDenied): gc.complete(db,ADMIN,config,state,'code')
-  with db.engine.connect() as c: self.assertNotIn('private-refresh',c.execute(db.table.select()).mappings().one()['payload'])
  def test_storage_revalidates_session_during_refresh(self):
   self.member()
   check=Mock(side_effect=AccessDenied('expired'))

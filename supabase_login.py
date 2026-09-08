@@ -53,15 +53,6 @@ def invite(config, invitation, token, base_url):
         client(config).auth.reset_password_email(invitation['email'],{'redirect_to':redirect})
 
 
-def google_sign_in_url(auth, settings, invitation=None):
-    base=settings['application']['public_url'].rstrip('/')+'/'
-    if urlsplit(base).scheme!='https': raise ValueError('Google login requires HTTPS.')
-    if invitation: base+='?'+urlencode({'invitation':invitation})
-    return auth.sign_in_with_oauth({'provider':'google','options':{
-        'redirect_to':base,'scopes':'openid email profile',
-        'query_params':{'prompt':'select_account'}}}).url
-
-
 def sign_out(auth):
     import streamlit as st
     try: auth.sign_out({'scope':'local'})
@@ -74,6 +65,10 @@ def sign_out(auth):
 def authenticate(settings):
     import streamlit as st
     config=dict(settings['supabase']); auth=client(config).auth
+    if st.query_params.get('error'):
+        for key in ('error','error_code','error_description','state','code'):
+            st.query_params.pop(key,None)
+        st.info('That sign-in link has expired. Sign in with your email and password below.')
     from auth_callback import receive
     pending=receive()
     if pending:
@@ -116,9 +111,6 @@ def authenticate(settings):
         st.write('Sign in to manage your projects and daily HSE performance.')
         login,recovery=st.tabs(['Sign in','Forgot password'])
         with login:
-            if config.get('google_enabled',False):
-                st.link_button('Continue with Google',google_sign_in_url(auth,settings,st.query_params.get('invitation')),type='primary',width='stretch')
-                st.caption('Or sign in with your email and password.')
             with st.form('supabase_login',clear_on_submit=True):
                 email=st.text_input('Work email'); password=st.text_input('Password',type='password')
                 submit=st.form_submit_button('Sign in',type='primary',width='stretch')

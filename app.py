@@ -39,9 +39,9 @@ def config():
 
 def setup():
     st.title('Connect your organization')
-    st.write('The master administrator connects Google once and selects the organization’s master spreadsheet. Invited users work through the app with their assigned project permissions.')
-    st.markdown('1. Sign in as the master administrator.\n2. Open **Master sheet → Connect Google**.\n3. Choose an existing spreadsheet or create a new one.\n4. Select **Set as master sheet**.\n5. Invite colleagues from **Team & access**.')
-    st.info('Organization mode needs one-time hosting configuration before Google sign-in and the Connect Google button become active. No service-account JSON upload is required.')
+    st.write('The master administrator pastes a Google Sheets link to connect the organization’s master spreadsheet. Invited users work through the app with their assigned project permissions.')
+    st.markdown('1. Sign in as the master administrator.\n2. Open **Master sheet**.\n3. Share the spreadsheet with the displayed service-account email as Editor.\n4. Paste its link and select **Connect sheet**.\n5. Invite colleagues from **Team & access**.')
+    st.info('The application owner configures Supabase and a Sheets service account once in hosting secrets. Users sign in with email and password.')
     st.link_button('Organization setup guide','https://github.com/mehbooballam/hsepulse#one-time-platform-setup')
 
 try: sheet_id,credentials,sheet_url=config()

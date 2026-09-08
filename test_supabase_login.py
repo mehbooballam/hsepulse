@@ -62,14 +62,6 @@ class SupabaseLoginTests(unittest.TestCase):
    factory.return_value.auth.admin.invite_user_by_email.side_effect=AuthApiError('exists',422,'email_exists')
    invite({}, {'email':'invited@example.com'},'new-token','https://app.example.com')
    factory.return_value.auth.reset_password_email.assert_called_once_with('invited@example.com',{'redirect_to':'https://app.example.com/?invitation=new-token'})
- def test_google_login_preserves_invitation_and_requests_identity_only(self):
-  from supabase_login import google_sign_in_url
-  auth=Mock(); auth.sign_in_with_oauth.return_value=NS(url='https://provider.example.com')
-  settings={'application':{'public_url':'https://app.example.com'}}
-  self.assertEqual(google_sign_in_url(auth,settings,'invite-token'),'https://provider.example.com')
-  options=auth.sign_in_with_oauth.call_args.args[0]['options']
-  self.assertEqual(options['redirect_to'],'https://app.example.com/?invitation=invite-token')
-  self.assertEqual(options['scopes'],'openid email profile')
  def test_login_screen_has_no_open_signup(self):
   from streamlit.testing.v1 import AppTest
   at=AppTest.from_string("""import streamlit as st

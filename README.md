@@ -18,10 +18,13 @@ There is no separate PostgreSQL service or database password in the app config.
 4. Invite the bootstrap administrator through Supabase Auth. The recipient opens
    the email, confirms their account in the app and chooses their own password.
    The verified configured email becomes the first administrator exactly once.
-5. Configure Google OAuth under `[google_connection]`, enabling Sheets and Drive
-   APIs. Register the deployed root URL with a trailing slash as its callback.
-   The administrator opens **Master sheet**, connects Google, and chooses or creates
-   the master spreadsheet. Team members do not need direct spreadsheet access.
+5. Enable the Google Sheets API and create a dedicated service account (no project
+   IAM roles or domain-wide delegation needed). Store its JSON fields under
+   `[gcp_service_account]` in Streamlit hosting Secrets. Never commit the key.
+   Share the spreadsheet with the displayed service-account email as Editor, then
+   paste its edit link into **Master sheet** and click **Connect sheet**.
+   Sheets allowing anyone-with-link editing may also be used. API writes still
+   require the server credential; a public link alone is insufficient.
 6. Invite colleagues from **Team & access**, assigning a role and project scope.
 
 Standard Supabase invitation/recovery emails are supported by a same-origin
@@ -35,20 +38,13 @@ Supabase's default mail service has recipient and rate restrictions. Configure a
 custom SMTP provider in Supabase before inviting the wider team. The app has no
 separate SMTP secrets. Mail delivery failures remain visible in invitation status.
 
-## Google sign-in
+## Spreadsheet links and login
 
-Create a Google OAuth Web application client for HSE Pulse. Register
-`https://nsflncqrjxcxpniarpwc.supabase.co/auth/v1/callback` for this deployment's
-Supabase Google provider, and the application's root URL (with trailing slash)
-for the separate master-sheet connection. Other deployments must use their own
-Supabase project callback URL.
-
-Enable the Google provider in Supabase with the OAuth client ID and secret, then
-set `supabase.google_enabled = true` in hosting secrets. Sign-in requests only
-openid, email and profile. The administrator separately authorizes Sheets and
-Drive metadata access from **Master sheet**. Keep Google email verification and
-Supabase's identity checks enabled. Public signup can remain disabled because
-users are invited first. Google login does not grant workspace membership.
+Users sign in with Supabase email/password. Google interactive OAuth is no longer
+used for login or sheet connections. The master administrator supplies a normal
+Google Sheets edit link. The server checks write permission before initializing
+registers; incompatible existing headers stop setup. Other workbook tabs remain
+untouched. This does not automatically import arbitrary workbook layouts.
 
 ## Roles and authorization
 

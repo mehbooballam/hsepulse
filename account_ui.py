@@ -7,7 +7,7 @@ from access_control import MembershipService, principal, ROLES, assignments, sen
 def production_context(settings):
  from account_store import OrganizationStore
  from supabase_account_store import SupabaseAccountStore
- from google_connection import operational_store, complete
+ from google_connection import operational_store
  from supabase_login import authenticate, sign_out
  app=dict(settings.get('application',{}))
  if not app.get('encryption_key') or not all(settings.get('supabase',{}).get(k) for k in ('url','publishable_key','secret_key')):
@@ -34,16 +34,10 @@ def production_context(settings):
   st.title('Access pending'); st.info(str(exc))
   if st.button('Sign out'): sign_out(auth)
   st.stop()
- if st.query_params.get('error'):
-  st.warning('Google connection was not approved. You can try again from Master sheet.'); st.query_params.clear()
- if st.query_params.get('code') and st.query_params.get('state'):
-  try: complete(accounts,claims,dict(settings['google_connection']),st.query_params['state'],st.query_params['code']); st.query_params.clear(); st.session_state['open_connection']=True; st.rerun()
-  except ValueError as exc: st.error(str(exc)); st.stop()
-  except Exception: st.error('Google authorization could not be completed. Return to Master sheet and reconnect.'); st.query_params.clear(); st.stop()
  if st.sidebar.button('Sign out'): sign_out(auth)
  st.sidebar.caption(user['email']+' · '+user['role'])
  # Connection failures still permit administrator repair screens.
- try: sheets=operational_store(accounts)
+ try: sheets=operational_store(accounts,settings)
  except Exception: sheets=None; st.warning('The master Google connection needs attention. Ask the master administrator to reconnect.')
  raw=OrganizationStore(accounts,sheets)
  return accounts,raw,claims,user
@@ -102,42 +96,32 @@ def team_page(raw,claims,settings,demo=False):
 
 def connection_page(accounts,raw,claims,settings,demo=False):
  import google_connection as gc
- st.title('Master sheet'); st.write('Connect your Google account, then choose the sheet that will power this organization.')
- if principal(raw.read(),claims)['role']!='Administrator': st.info('Only the master administrator can manage this connection.'); return
+ st.title('Master sheet')
+ st.write('Paste your Google Sheets link to use it as this organization’s master database.')
+ if principal(raw.read(),claims)['role']!='Administrator':
+  st.info('Only the master administrator can manage this connection.'); return
  if demo:
-  st.info('Preview only. Configure the application’s Google OAuth client and account database to activate this connection.')
-  st.button('Connect Google',disabled=True,type='primary'); return
- doc=accounts.document(); connection=doc.get('connection',{}); config=dict(settings.get('google_connection',{}))
+  st.info('Preview only. Configure the organization and Sheets service account to connect a spreadsheet.'); return
+ connection=accounts.document().get('connection',{})
  if connection.get('spreadsheet_id'):
   st.success('Connected · '+connection['title']); st.link_button('Open master sheet',connection['url'])
-  st.caption('Project records are read and saved through this connection. Team members do not need direct spreadsheet access.')
- else: st.info('No master sheet connected yet.')
- if not all(config.get(k) for k in ('client_id','client_secret','redirect_uri')):
-  st.warning('The application owner must configure Google OAuth once in hosting secrets. No service-account JSON is needed.'); return
- if st.button('Reconnect Google' if connection else 'Connect Google',type='primary'):
-  st.session_state['google_auth_url']=gc.begin(accounts,claims,config)
- if st.session_state.get('google_auth_url'): st.link_button('Continue to Google',st.session_state['google_auth_url'],type='primary')
- if doc.get('candidate_google'):
-  st.subheader('Choose your master sheet')
-  choice=st.radio('Sheet source',['Create a new master sheet','Choose an existing spreadsheet'])
-  if choice=='Create a new master sheet':
-   title=st.text_input('Sheet name','HSE Pulse — Master Database')
-   selected=None
-  else:
-   try:
-    available=gc.list_sheets(accounts)
-    selected=st.selectbox('Google spreadsheet',available,format_func=lambda f:f['name']) if available else None
-   except Exception: selected=None; st.error('Could not list spreadsheets. Reconnect Google and approve the requested permissions.')
-   title=None
-  st.caption('The app adds its required register tabs. Existing compatible records are preserved. An incompatible tab stops setup without replacing it.')
-  confirm=st.checkbox('Use this sheet as the organization’s master database'+(' (replaces the current connection)' if connection else ''))
-  if st.button('Set as master sheet',disabled=not confirm):
-   try:
-    if not title and not selected: raise ValueError('Select a spreadsheet first.')
-    gc.choose(accounts,claims,sheet_id=selected['id'] if selected else None,title=title)
-    st.session_state.pop('google_auth_url',None); st.success('Master sheet connected.'); st.rerun()
-   except ValueError as exc: st.error(str(exc))
-   except Exception: st.error('Sheet setup could not be confirmed. Check Google permissions and retry; existing records were not overwritten.')
+ config=dict(settings.get('gcp_service_account',{}))
+ ready=all(config.get(k) for k in ('client_email','private_key','token_uri'))
+ if ready:
+  st.caption('Share your sheet with this address as Editor, or use a sheet with “Anyone with the link” edit access.')
+  st.code(config['client_email'],language=None)
+ else:
+  st.warning('One-time setup required: the application owner must add the Sheets service account to hosting secrets. After setup, only a spreadsheet link is needed.')
+ st.caption('The app adds required register tabs and preserves compatible records. Existing workbook tabs with incompatible headers must be renamed before connecting.')
+ with st.form('connect_sheet_link'):
+  link=st.text_input('Google Sheets link',value=connection.get('url',''),placeholder='https://docs.google.com/spreadsheets/d/.../edit')
+  submitted=st.form_submit_button('Connect sheet' if not connection else 'Update connection',type='primary',disabled=not ready)
+ if submitted:
+  try:
+   gc.choose(accounts,claims,settings,link)
+  except ValueError as exc: st.error(str(exc))
+  except Exception: st.error('Could not connect. Check that the sheet exists and grants Editor access to the address above, then retry.')
+  else: st.success('Master sheet connected.'); st.rerun()
  if connection:
   with st.expander('Disconnect master sheet'):
    confirm=st.checkbox('Disconnect this organization from Google Sheets. The spreadsheet itself will remain in Google Drive.')
