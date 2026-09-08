@@ -38,19 +38,11 @@ def config():
     return sheet_id,credentials,defaults.get('url','')
 
 def setup():
-    st.title('Connect Google Sheets')
-    st.write('Google Sheets stores KPI definitions, daily records, sites and corrective actions. Demo mode uses temporary sample data only.')
-    if sheet_url: st.link_button('Open your HSE backend workbook',sheet_url)
-    st.markdown('''1. Open [Google Cloud Console](https://console.cloud.google.com/), create or select a project, and enable the **Google Sheets API**.
-2. Under **IAM & Admin → Service Accounts**, create a service account. It does not need a project-wide role for this app.
-3. Open the service account, choose **Keys → Add key → Create new key → JSON**, and save the file privately on this computer.
-4. Share the HSE backend workbook with the JSON file's **client_email**, giving it **Editor** access.
-5. Configure the local environment as shown below, then restart the app and select **Google Sheets** in the sidebar.''')
-    st.code('export GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/to/service-account.json"\n'+f'export HSE_SPREADSHEET_ID="{sheet_id or "YOUR_SPREADSHEET_ID"}"\n'+'.venv/bin/streamlit run app.py',language='bash')
-    st.write('For Streamlit hosting, put the spreadsheet ID and service-account fields in the platform’s Secrets settings. A template is included in .streamlit/secrets.example.toml.')
-    st.caption('The private key stays on the server. This app never asks you to paste it into a page or chat.')
-    st.markdown('[Authentication guide](https://docs.gspread.org/en/master/oauth2.html) · [Enable the Sheets API](https://console.cloud.google.com/apis/library/sheets.googleapis.com)')
-    st.info('Live project access uses configured sign-in and email-based project roles. Configure the auth and access sections in the supplied secrets template before team deployment.')
+    st.title('Connect your organization')
+    st.write('The master administrator connects Google once and selects the organization’s master spreadsheet. Invited users work through the app with their assigned project permissions.')
+    st.markdown('1. Sign in as the master administrator.\n2. Open **Master sheet → Connect Google**.\n3. Choose an existing spreadsheet or create a new one.\n4. Select **Set as master sheet**.\n5. Invite colleagues from **Team & access**.')
+    st.info('Organization mode needs one-time hosting configuration before Google sign-in and the Connect Google button become active. No service-account JSON upload is required.')
+    st.link_button('Organization setup guide','https://github.com/mehbooballam/hsepulse#one-time-platform-setup')
 
 try: sheet_id,credentials,sheet_url=config()
 except Exception:
@@ -86,7 +78,7 @@ if page=='Google Sheets setup':
     setup(); st.stop()
 
 if mode=='Google Sheets' and not credentials and not production:
-    st.warning('Google Sheets is not connected yet. Add service-account credentials to enable live storage.')
+    st.warning('Organization sign-in and Google connection are not configured yet. The application owner needs to complete the one-time hosting setup.')
     setup(); st.stop()
 
 key='demo_store_v2' if mode=='Demo' else 'google_store_v2'
