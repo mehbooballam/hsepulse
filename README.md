@@ -35,6 +35,21 @@ Supabase's default mail service has recipient and rate restrictions. Configure a
 custom SMTP provider in Supabase before inviting the wider team. The app has no
 separate SMTP secrets. Mail delivery failures remain visible in invitation status.
 
+## Google sign-in
+
+Create a Google OAuth Web application client for HSE Pulse. Register
+`https://nsflncqrjxcxpniarpwc.supabase.co/auth/v1/callback` for this deployment's
+Supabase Google provider, and the application's root URL (with trailing slash)
+for the separate master-sheet connection. Other deployments must use their own
+Supabase project callback URL.
+
+Enable the Google provider in Supabase with the OAuth client ID and secret, then
+set `supabase.google_enabled = true` in hosting secrets. Sign-in requests only
+openid, email and profile. The administrator separately authorizes Sheets and
+Drive metadata access from **Master sheet**. Keep Google email verification and
+Supabase's identity checks enabled. Public signup can remain disabled because
+users are invited first. Google login does not grant workspace membership.
+
 ## Roles and authorization
 
 Administrators manage membership and the Google connection. Corporate managers
