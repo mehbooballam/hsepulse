@@ -84,7 +84,7 @@ if mode=='Google Sheets' and not credentials and not production:
 key='demo_store_v2' if mode=='Demo' else 'google_store_v2'
 try:
     if production:
-        st.session_state[key]=AuthorizedStore(organization,claims)
+        st.session_state[key]=AuthorizedStore(organization,claims,lambda:__import__('supabase_login').validate_current(application_settings))
         st.session_state.pop(key+'_data',None)
     if key not in st.session_state:
         st.session_state[key]=MemoryStore({**make_demo(),**enterprise.demo()}) if mode=='Demo' else GoogleSheetsStore(sheet_id,credentials)

@@ -145,3 +145,11 @@ def authenticate(settings):
         if st.button('Cancel and sign out'): sign_out(auth)
         st.stop()
     return claims,auth
+
+
+def validate_current(settings):
+    import streamlit as st
+    config=dict(settings['supabase'])
+    claims=restore(client(config).auth,st.session_state,config['url'])
+    if not claims: raise AccessDenied('Your session expired. Sign in again.')
+    return claims

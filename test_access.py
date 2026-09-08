@@ -1,6 +1,6 @@
 import unittest, json
 from datetime import datetime,timedelta,timezone
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from copy import deepcopy
 from domain import initial_tables
 from enterprise import seed
@@ -100,6 +100,12 @@ class AccessTests(unittest.TestCase):
   self.assertEqual(db.document()['candidate_google']['credentials']['refresh_token'],'private-refresh')
   with self.assertRaises(AccessDenied): gc.complete(db,ADMIN,config,state,'code')
   with db.engine.connect() as c: self.assertNotIn('private-refresh',c.execute(db.table.select()).mappings().one()['payload'])
+ def test_storage_revalidates_session_during_refresh(self):
+  self.member()
+  check=Mock(side_effect=AccessDenied('expired'))
+  store=AuthorizedStore(self.raw,USER,check)
+  with self.assertRaises(AccessDenied): store.read()
+  with self.assertRaises(AccessDenied): store.save('03_DAILY_REPORT',[{'id':'x','Project':'P01'}])
  def test_admin_pages(self):
   from streamlit.testing.v1 import AppTest
   at=AppTest.from_file('app.py',default_timeout=60); at.secrets['application']={'enabled':False}; at.run()

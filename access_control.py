@@ -133,9 +133,16 @@ class MembershipService:
 
 class AuthorizedStore:
  """Fresh membership check on every read and mutation, including fragment refresh."""
- def __init__(self,store,claims): self.raw=store; self.claims=dict(claims)
+ def __init__(self,store,claims,validate_identity=None):
+  self.raw=store; self.claims=dict(claims); self.validate_identity=validate_identity
+ def _identity(self):
+  if self.validate_identity:
+   current=self.validate_identity()
+   if not current or any(current.get(k)!=self.claims.get(k) for k in ('sub','iss','email')):
+    raise AccessDenied('Your sign-in session has changed. Sign in again.')
+  return self.claims
  def read(self):
-  t=self.raw.read(); user=principal(t,self.claims); result={}
+  claims=self._identity(); t=self.raw.read(); user=principal(t,claims); result={}
   for table,rows in t.items():
    if table in SCHEMAS: result[table]=[]; continue
    result[table]=[r for r in rows if permitted(user,table,r.get('Project',r.get('project')),False)]
@@ -145,7 +152,7 @@ class AuthorizedStore:
  def save_many(self,changes,expected):
   from storage import _LOCK
   with _LOCK:
-   t=self.raw.read(); user=principal(t,self.claims)
+   claims=self._identity(); t=self.raw.read(); user=principal(t,claims)
    clean=deepcopy(changes)
    for table,rows in clean.items():
     if table in SCHEMAS: raise AccessDenied('Use membership administration for access changes.')
