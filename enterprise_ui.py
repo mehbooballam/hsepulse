@@ -1,7 +1,7 @@
 """Corporate / project UI and mobile-friendly operational forms."""
 import base64, html, io, json, zipfile
 from datetime import datetime, date, timedelta, time
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 import pandas as pd
 import streamlit as st
 import enterprise as e
@@ -52,7 +52,12 @@ def render(page,store,mode):
  t['AlertState']=[r for r in t['AlertState'] if r.get('project') in ids]
  st.sidebar.caption(f'{role} · {len(ids)} accessible projects')
  cfg=e.settings(t)
- def link(view,**params): return cfg.get('base_url','http://localhost:8501/').rstrip('/')+'/?'+urlencode({'view':view,**params})
+ def link(view,**params):
+  base=cfg.get('base_url','http://localhost:8501/')
+  # Default local template links must follow the deployed app's actual URL.
+  if urlsplit(base).hostname in ('localhost','127.0.0.1'):
+   base=st.context.url or base
+  return base.rstrip('/')+'/?'+urlencode({'view':view,**params})
  def save(table,rows):
   for row in rows:
    if not e.permitted(role,assigned,row.get('Project',row.get('project','')),table,True): raise ValueError('Your role cannot update this area.')
