@@ -7,7 +7,7 @@ from project_lifecycle import close_project, delete_project
 def render_projects(store, tables, projects, role, actor):
     can_manage = role in ('Administrator', 'Corporate manager')
     st.title('Projects & access')
-    st.dataframe([{k: v for k, v in p.items() if k != 'closure_context'} for p in projects], hide_index=True, width='stretch')
+    st.dataframe([{k: v for k, v in p.items() if k not in ('closure_context','branding')} for p in projects], hide_index=True, width='stretch')
     if projects:
         code = st.selectbox('Manage project', [p['id'] for p in projects],
                             format_func=lambda value: next(p['name'] + ' · ' + p.get('status', 'Active') for p in projects if p['id'] == value))
@@ -19,7 +19,7 @@ def render_projects(store, tables, projects, role, actor):
             st.success(f"Completed and closed on {old.get('closed_at', '')} by {old.get('closed_by', '')}")
             st.write(old.get('closure_notes', ''))
             st.caption('The closure report includes all saved project records, outstanding items, and uploaded evidence. External evidence links are listed as references.')
-            render_closure_download(store, code)
+            render_closure_download(store, code, role)
         elif can_manage:
             with st.form('edit_project_' + code):
                 row = {**old, 'actor': actor}
@@ -40,6 +40,8 @@ def render_projects(store, tables, projects, role, actor):
                             if confirmation != code: raise ValueError('Enter the exact project code to confirm.')
                             persist(close_project(old, tables, actor, notes))
                         except ValueError as exc: st.error(str(exc))
+            from branding_ui import project_editor
+            project_editor(store, tables, old, actor)
         if can_manage:
             with st.expander('Delete project'):
                 st.warning('This removes the project and its records from normal views. Stored records and audit history are retained; the project code cannot be reused. Download the closure report first if needed.')
@@ -66,14 +68,20 @@ def render_projects(store, tables, projects, role, actor):
         st.info('Administrators and corporate managers can edit, close or delete projects.')
 
 
-def render_closure_download(store, code):
+def render_closure_download(store, code, role='Project viewer'):
+    from branding_ui import report_options
+    fresh = store.read()
+    current = next(p for p in fresh['Projects'] if p['id'] == code)
+    profiles = report_options(fresh, current, role in ('Administrator','Corporate manager'), 'closure_'+code)
     if st.button('Generate closure PDF', type='primary'):
+        if profiles is None:
+            st.error('Correct the report branding details before generating the PDF.'); return
         try:
             from project_report import closure_pdf
             fresh = store.read()
             current = next(p for p in fresh['Projects'] if p['id'] == code)
             with st.spinner('Building complete project report…'):
-                pdf = closure_pdf(fresh, current)
+                pdf = closure_pdf(fresh, current, profiles)
             st.download_button('Download closed project report (PDF)', pdf,
                                re.sub(r'[^A-Za-z0-9_-]', '_', code) + '-closure-report.pdf', 'application/pdf')
         except Exception as exc:
