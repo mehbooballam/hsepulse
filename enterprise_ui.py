@@ -25,10 +25,15 @@ def safe_csv(df):
 
 def render(page,store,mode):
  role,assigned,actor=identity(mode)
- t=store.read()
+ from project_lifecycle import visible_tables
+ t=visible_tables(store.read())
  allowed=[p for p in t['Projects'] if e.permitted(role,assigned,p['id'])]
  ids=[p['id'] for p in allowed]; names={p['id']:p['name'] for p in allowed}
- if not ids: st.info('No projects have been assigned to this account.'); st.stop()
+ if page=='Project settings':
+  from project_ui import render_projects
+  render_projects(store,t,allowed,role,actor)
+  if role not in ('Administrator','Corporate manager'): return
+ if not ids and page!='Project settings': st.info('No projects have been assigned to this account.'); st.stop()
  # Scope every read, including exports and attachments, before rendering any page.
  for table in e.FORMS: t[table]=[r for r in t[table] if r.get('Project') in ids]
  t['Projects']=allowed
@@ -125,10 +130,18 @@ def render(page,store,mode):
  if page=='Corporate dashboard':
   st.title('Corporate HSE dashboard'); st.write('Your projects, operational risks and daily performance in one place.'); dashboard()
  elif page=='Project dashboards':
-  project=pick_project(); st.title(names[project]); dashboard(project)
+  project=pick_project(); st.title(names[project])
+  if next(p for p in allowed if p['id']==project).get('status')=='Closed':
+   st.info('This project is completed and closed. Its closure PDF preserves indicators at the time of closure.')
+   from project_ui import render_closure_download
+   render_closure_download(store,project)
+  dashboard(project)
  elif page=='Field forms':
   st.title('Field reporting'); st.write('Choose a project and a form. One submission updates the register and both dashboards.')
-  project=pick_project(); choices=list(e.FORMS); selected=st.query_params.get('form',choices[0])
+  project=pick_project()
+  if next(p for p in allowed if p['id']==project).get('status')=='Closed':
+   st.info('This project is closed and read-only. Download its closure PDF from Project settings.'); return
+  choices=list(e.FORMS); selected=st.query_params.get('form',choices[0])
   table=st.selectbox('Report type',choices,index=choices.index(selected) if selected in choices else 0,format_func=e.LABELS.get)
   if not e.permitted(role,assigned,project,table,True): st.info('Your role can view this area but cannot submit this form.'); return
   existing=[r for r in t[table] if r['Project']==project]
@@ -245,23 +258,6 @@ def render(page,store,mode):
    for table in e.FORMS: z.writestr(table+'.csv',safe_csv(pd.DataFrame(t[table])))
   st.download_button('Export accessible project registers',buff.getvalue(),'HSE-registers.zip','application/zip')
  elif page=='Project settings':
-  st.title('Projects & access'); frame(allowed); download('Projects',allowed)
-  if role!='Corporate manager': st.info('Corporate managers maintain project settings.'); return
-  project=pick_project(); old=next(r for r in allowed if r['id']==project)
-  with st.form('project_settings'):
-   row={**old,'actor':actor}
-   for k,label in [('name','Project name'),('client','Client / owner'),('location','Location'),('lead','Project lead'),('hse_lead','HSE lead')]: row[k]=st.text_input(label,old.get(k,''))
-   row['status']=st.selectbox('Project status',['Active','Inactive','On Hold'],index=['Active','Inactive','On Hold'].index(old['status']))
-   if st.form_submit_button('Save project'):
-    if not row['name'].strip(): st.error('Project name is required.')
-    else: save('Projects',[row]); st.success('Project saved.')
-  with st.expander('Add another project'):
-   with st.form('new_project'):
-    new_id=st.text_input('New project code',placeholder='P16'); new_name=st.text_input('New project name')
-    if st.form_submit_button('Create project'):
-     if not new_id.strip() or not new_name.strip() or any(p['id']==new_id.strip() for p in t['Projects']): st.error('Enter a unique code and project name.')
-     else:
-      save('Projects',[{'id':new_id.strip(),'name':new_name.strip(),'client':'','location':'','lead':'','hse_lead':'','status':'Active','target':90,'actor':actor}]); st.success('Project created. Refresh to open it and assign users in Team & access.')
   with st.form('configuration'):
    url=st.text_input('App URL for shared form links',cfg['base_url']); cutoff=st.time_input('Daily report cutoff (Riyadh)',time.fromisoformat(cfg['report_cutoff']))
    green=st.number_input('Green threshold',0.,100.,float(cfg['green_threshold'])); amber=st.number_input('Amber threshold',0.,100.,float(cfg['amber_threshold'])); orange=st.number_input('Orange threshold',0.,100.,float(cfg['orange_threshold']))
