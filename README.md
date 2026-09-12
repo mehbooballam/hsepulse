@@ -129,3 +129,37 @@ corporate manager or administrator to create another project.
 Local checks include lifecycle permissions, stale edits, atomic batch rejection,
 closed-record immutability, deletion visibility, closure-time calculations, PDF
 pagination of long values, and lossless project-scoped embedded data.
+
+## Company and project branding
+
+Administrators use **Company branding** to upload/remove the organization logo and
+save company name, website, email, phone, contact person, address and other contact
+details. The company identity appears in the signed-in sidebar. Company branding
+is an administrator-only `Settings` record, enforced at the authorized mutation
+boundary; corporate managers cannot change it through a crafted save.
+
+Administrators/corporate managers use **Manage projects > Project branding & report
+details** for each open project's logo and default contacts. Previews show company
+branding on the left and project branding on the right. PNG/JPEG uploads are limited
+to 1 MB and 4096 pixels per side/16 million pixels, decoded and normalized to a PNG
+with a maximum dimension of 1200 pixels. Aspect ratio and transparency are retained;
+no external logo URLs or SVG execution are supported.
+
+Closure PDFs repeat both logos in the header and include the contact details.
+Company branding is frozen in the closure settings snapshot; project branding is
+frozen with the project record. **Report branding & contact details** changes a
+report copy without changing the source. Readers may edit report contacts or
+explicitly choose current company branding. Managers may supply a project logo
+for a report copy, including a project closed before branding was introduced.
+Such closure copies are labelled as customized, and their chosen branding is
+preserved alongside the original snapshot in the embedded JSON attachment.
+
+**Management report > Report project** selects all accessible projects or an
+individual project. The printable HTML embeds the applicable logos and report
+contact details so it remains self-contained for printing. The register ZIP
+continues to export all accessible project registers, as its button states.
+
+Branding uses the existing JSONB operational store and does not require replacing
+records. Register the new `Projects.branding` field by running the metadata-only
+`supabase/branding.sql` migration. Existing deployments with no branding configured
+retain the HSE Pulse fallback presentation.
