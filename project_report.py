@@ -8,7 +8,7 @@ from xml.sax.saxutils import escape as xml_escape
 import enterprise as e
 
 
-def closure_pdf(tables, project):
+def closure_pdf(tables, project, branding=None):
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.utils import ImageReader
@@ -17,6 +17,10 @@ def closure_pdf(tables, project):
 
     if project.get('status') != 'Closed':
         raise ValueError('A closure report is available only for a closed project.')
+    from branding import report_profiles, validate_profile, contact_rows, draw_pdf_header, text_summary, COMPANY_KEY
+    saved_branding = report_profiles(tables, project)
+    branding = branding if branding is not None else saved_branding
+    for item in branding.values(): validate_profile(item)
     now = datetime.fromisoformat(project['closed_at'])
     context = json.loads(project['closure_context'])
     scoped = {table: [r for r in tables.get(table, []) if r.get('Project', r.get('project')) == project['id']]
@@ -67,7 +71,12 @@ def closure_pdf(tables, project):
     story.append(p('HSE PULSE', 'Heading2'))
     story.append(p('Project completion & closure report', 'Title'))
     story.append(p(project['name'], 'Heading1'))
-    table(['Project detail', 'Value'], [(k, v) for k, v in project.items() if k != 'closure_context'], [145, 354])
+    table(['Project detail', 'Value'], [(k, v) for k, v in project.items() if k not in ('closure_context','branding')], [145, 354])
+    if contact_rows(branding):
+        heading('Report contact details')
+        table(['Contact detail', 'Value'], contact_rows(branding), [145, 354])
+    if branding != saved_branding:
+        story.append(p('Report-copy customization: the displayed branding/contact details were selected when generating this copy. Saved project records and the original closure context are unchanged.', 'SmallNote'))
     heading('Scope and interpretation')
     story.append(p(f'All saved project records are included, dated {start} to {end}. KPIs cover {start} through closure on {now.date()}; time-sensitive indicators are evaluated at {now.isoformat()}. Future-dated plans are retained in the registers. Missing values are not evidence of compliance. Closure does not automatically resolve outstanding actions.', 'SmallNote'))
     story.append(p('TRIR = recordables × 200,000 / man-hours; LTIFR = LTI × 1,000,000 / man-hours; severity = lost workdays × 1,000,000 / man-hours. Rates require exposure reports for each incident date. Assurance is the equal-weight mean of available control percentages; missing controls are excluded and coverage is shown. The score is provisional, not a certification.', 'SmallNote'))
@@ -98,7 +107,7 @@ def closure_pdf(tables, project):
             heading(f"{index}. {record.get('Record ID') or record.get('id', '')}")
             # Field/value tables retain all fields without squeezing wide registers.
             keys = list(dict.fromkeys(e.SCHEMAS.get(name, []) + list(record)))
-            table(['Field', 'Value'], [(key, record.get(key, '')) for key in keys], [145, 354])
+            table(['Field', 'Value'], [(key, text_summary(record.get(key)) if name == 'Settings' and record.get('id') == COMPANY_KEY and key == 'value' else record.get(key, '')) for key in keys], [145, 354])
     story.append(PageBreak())
     heading('Uploaded evidence')
     groups = defaultdict(list)
@@ -118,15 +127,16 @@ def closure_pdf(tables, project):
         except Exception:
             story.append(p('Evidence could not be rendered. Original chunks are preserved in the attached project data.'))
     def footer(canvas, doc):
+        draw_pdf_header(canvas, branding, project['name'])
         canvas.setFont('Helvetica', 8)
         canvas.setFillColor(colors.HexColor('#536777'))
         canvas.drawString(48, 25, 'HSE Pulse | Project closure report')
         canvas.drawRightString(547, 25, f'Page {doc.page}')
     SimpleDocTemplate(output, pagesize=(595, 842), rightMargin=48, leftMargin=48,
-                      topMargin=42, bottomMargin=42, title=project['name'] + ' - Closure report').build(story, onFirstPage=footer, onLaterPages=footer)
+                      topMargin=112, bottomMargin=42, title=project['name'] + ' - Closure report').build(story, onFirstPage=footer, onLaterPages=footer)
     # Lossless appendix also preserves Unicode, original evidence bytes and additional fields.
     from pypdf import PdfReader, PdfWriter
     writer = PdfWriter(clone_from=PdfReader(io.BytesIO(output.getvalue())))
-    writer.add_attachment('project-data.json', json.dumps(t, ensure_ascii=False, indent=2).encode('utf-8'))
+    writer.add_attachment('project-data.json', json.dumps({**t, 'Report branding': branding}, ensure_ascii=False, indent=2).encode('utf-8'))
     final = io.BytesIO(); writer.write(final)
     return final.getvalue()
