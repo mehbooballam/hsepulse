@@ -161,6 +161,8 @@ class AuthorizedStore:
     if table in SCHEMAS: raise AccessDenied('Use membership administration for access changes.')
     old={r['id']:r for r in t[table]}
     for r in rows:
+     if table=='Settings' and r['id']=='company_branding' and user['role']!='Administrator':
+      raise AccessDenied('Only an administrator can change company branding.')
      project=r.get('Project',r.get('project'))
      if not permitted(user,table,project,True): raise AccessDenied('You cannot change this project or area.')
      previous=old.get(r['id'])
