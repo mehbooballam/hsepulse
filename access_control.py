@@ -147,12 +147,15 @@ class AuthorizedStore:
    if table in SCHEMAS: result[table]=[]; continue
    result[table]=[r for r in rows if permitted(user,table,r.get('Project',r.get('project')),False)]
    if table=='Projects' and user['role'] not in CORPORATE: result[table]=[r for r in rows if r['id'] in assignments(user)]
-  return result
+  from project_lifecycle import visible_tables
+  return visible_tables(result)
  def save(self,table,rows,expected=None): self.save_many({table:rows},{table:expected or {}})
  def save_many(self,changes,expected):
   from storage import _LOCK
   with _LOCK:
    claims=self._identity(); t=self.raw.read(); user=principal(t,claims)
+   from project_lifecycle import validate_changes
+   validate_changes(t,changes)
    clean=deepcopy(changes)
    for table,rows in clean.items():
     if table in SCHEMAS: raise AccessDenied('Use membership administration for access changes.')

@@ -9,9 +9,13 @@ class ConflictError(ValueError): pass
 
 class MemoryStore:
     def __init__(self,tables): self.tables=deepcopy(tables)
-    def read(self): return deepcopy(self.tables)
+    def read(self):
+        from project_lifecycle import visible_tables
+        return visible_tables(deepcopy(self.tables))
     def save(self,table,rows,expected=None):
         with _LOCK:
+            from project_lifecycle import validate_changes
+            validate_changes(self.tables,{table:rows})
             current={r['id']:r for r in self.tables[table]}
             check_conflicts(current,rows,expected)
             for row in rows:
@@ -84,6 +88,8 @@ def column_name(index):
 def memory_save_many(self,changes,expected):
     with _LOCK:
         for table,rows in changes.items(): check_conflicts({r['id']:r for r in self.tables[table]},rows,expected.get(table,{}))
+        from project_lifecycle import validate_changes
+        validate_changes(self.tables,changes)
         backup=deepcopy(self.tables)
         try:
             for table,rows in changes.items(): self.save(table,rows,expected.get(table,{}))

@@ -66,6 +66,36 @@ begin
    if coalesce(old.revision,'') <> coalesce(expected->cat->>(r->>'id'),'') then
     raise exception 'A record changed. Refresh and retry.' using errcode='40001';
    end if;
+   -- Enforce lifecycle under the organization lock, including stale form saves.
+   saved=coalesce(old.data,'{}'::jsonb) || r;
+   if cat='Projects' then
+    if old.data->>'status'='Deleted' or
+       (old.data->>'status'='Closed' and saved->>'status' <> 'Deleted') then
+     raise exception 'Closed or deleted projects are read-only';
+    end if;
+    if coalesce(trim(saved->>'name'),'')='' or coalesce(saved->>'status','') not in ('Active','Inactive','On Hold','Closed','Deleted') then
+     raise exception 'Enter a project name and valid status';
+    end if;
+    if saved->>'status' in ('Closed','Deleted') and old.id is null then
+     raise exception 'Create the project before closing or deleting it';
+    end if;
+    if saved->>'status'='Closed' and
+       (coalesce(saved->>'closed_at','')='' or coalesce(saved->>'closed_by','')='' or
+        coalesce(trim(saved->>'closure_notes'),'')='' or coalesce(saved->>'closure_context','')='') then
+     raise exception 'Completion requires closure details';
+    end if;
+    if saved->>'status'='Deleted' and
+       (coalesce(saved->>'deleted_at','')='' or coalesce(saved->>'deleted_by','')='') then
+     raise exception 'Deletion requires recorded confirmation';
+    end if;
+   elsif exists(select 1 from public.hsepulse_records p where p.category='Projects'
+       and p.id in (coalesce(saved->>'Project',saved->>'project'), old.project)
+       and p.data->>'status' in ('Closed','Deleted'))
+     or exists(select 1 from jsonb_array_elements(coalesce(changes->'Projects','[]'::jsonb)) p
+       where p->>'id' in (coalesce(saved->>'Project',saved->>'project'), old.project)
+       and p->>'status' in ('Closed','Deleted')) then
+    raise exception 'Closed or deleted projects are read-only';
+   end if;
    if old.id is null then
     insert into public.hsepulse_counters(category,value) values(cat,1)
     on conflict(category) do update set value=public.hsepulse_counters.value+1 returning value into seq;
@@ -88,6 +118,13 @@ begin
 end $$;
 revoke all on function public.hsepulse_save_records(jsonb,jsonb,bigint,text) from public,anon,authenticated;
 grant execute on function public.hsepulse_save_records(jsonb,jsonb,bigint,text) to service_role;
+-- Register lifecycle fields without altering existing records or field order.
+update public.hsepulse_categories c
+set fields = c.fields || coalesce((
+ select jsonb_agg(f) from unnest(array['closed_at','closed_by','closure_notes','closure_context','deleted_at','deleted_by']) f
+ where not (c.fields ? f)
+), '[]'::jsonb)
+where category='Projects';
 commit;
 select relname,relrowsecurity,has_table_privilege('anon',oid,'SELECT') as public_read,
  has_table_privilege('authenticated',oid,'UPDATE') as user_write

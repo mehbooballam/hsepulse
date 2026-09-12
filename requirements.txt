@@ -8,3 +8,5 @@ psycopg[binary]>=3.2,<4
 cryptography>=45,<51
 google-auth-oauthlib>=1.2,<2
 supabase==2.31.0
+reportlab>=4.4,<5
+pypdf>=6,<7

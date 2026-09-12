@@ -92,3 +92,40 @@ writes, rollback on conflicts and denied direct public access.
 
 Legacy workbook/Sheets utilities are retained for historical reference only; the
 application neither reads Google credentials nor connects to a spreadsheet.
+
+## Project editing, completion and deletion
+
+Administrators and corporate managers use **Manage projects** to edit project
+name, client, location, leads and status. **Complete & close project** requires
+completion/handover notes and the exact project code. Closure records who closed
+it and when, freezes the settings and standards used by its report, and makes
+project details and all linked operational records read-only. Outstanding actions
+are retained and reported, not automatically marked complete.
+
+Closed projects offer **Generate closure PDF** in Manage projects and the project
+dashboard (including for assigned viewers). The report contains closure details,
+all KPI summaries, vector charts, alert and inventory tables, every field in all
+15 registers, acknowledgements, standards, settings and uploaded evidence images.
+An embedded `project-data.json` attachment preserves original field values and
+base64 evidence chunks. External evidence URLs are listed; their remote contents
+are not fetched. Time-sensitive metrics use the recorded closure time.
+
+**Delete project** requires the exact code. This is a soft deletion: the project
+and its records disappear from normal views and exports, while database records
+and revision/audit history remain. Deleted codes cannot be reused. Download any
+required closure PDF before deletion. Deleting the last project still allows a
+corporate manager or administrator to create another project.
+
+### Upgrade an existing deployment
+
+1. Install the updated `requirements.txt` with Python 3.12 or later.
+2. Reapply `supabase/database.sql` in the Supabase SQL Editor **before deploying
+   the updated app**. It safely replaces the transactional save function and adds
+   database-side closure/deletion guards without dropping data.
+3. Run `bootstrap_database.py` to register the additional project fields.
+4. Restart the Streamlit app and verify closure plus rejected stale writes against
+   a test project in your Supabase deployment.
+
+Local checks include lifecycle permissions, stale edits, atomic batch rejection,
+closed-record immutability, deletion visibility, closure-time calculations, PDF
+pagination of long values, and lossless project-scoped embedded data.
