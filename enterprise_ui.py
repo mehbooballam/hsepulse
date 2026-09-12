@@ -55,7 +55,12 @@ def render(page,store,mode):
    if not e.permitted(role,assigned,row.get('Project',row.get('project','')),table,True): raise ValueError('Your role cannot update this area.')
   store.save(table,rows,{r['id']:r.get('revision','') for r in t[table]})
  def pick_project(label='Project'):
-  default=st.query_params.get('project',ids[0]); return st.selectbox(label,ids,index=ids.index(default) if default in ids else 0,format_func=lambda p:names[p])
+  default=st.query_params.get('project',ids[0]); selected=st.selectbox(label,ids,index=ids.index(default) if default in ids else 0,format_func=lambda p:names[p])
+  from branding import report_profiles
+  from branding_ui import preview
+  profiles=report_profiles(t,next(p for p in allowed if p['id']==selected))
+  if any(profiles.values()): preview(profiles,names[selected])
+  return selected
  def download(table,rows):
   from export_ui import export_buttons
   export_buttons(table,rows)
@@ -134,7 +139,7 @@ def render(page,store,mode):
   if next(p for p in allowed if p['id']==project).get('status')=='Closed':
    st.info('This project is completed and closed. Its closure PDF preserves indicators at the time of closure.')
    from project_ui import render_closure_download
-   render_closure_download(store,project)
+   render_closure_download(store,project,role)
   dashboard(project)
  elif page=='Field forms':
   st.title('Field reporting'); st.write('Choose a project and a form. One submission updates the register and both dashboards.')
@@ -238,7 +243,7 @@ def render(page,store,mode):
  elif page=='Standards library':
   st.title('Standards & client requirements'); st.info('These 17 requirement families came from your workbook. They are unverified templates; record the current clause, revision, applicability and evidence before marking project compliance.')
   frame(t['Standards']); download('Standards',t['Standards'])
-  if role=='Corporate manager':
+  if role in ('Administrator','Corporate manager'):
    with st.form('standard'):
     sid=st.selectbox('Requirement family',[r['id'] for r in t['Standards']]); old=next(r for r in t['Standards'] if r['id']==sid)
     reference=st.text_input('Authoritative reference'); revision=st.text_input('Verified revision'); verified=st.date_input('Verification date'); instruction=st.text_input('Verified control / clause'); reviewer=st.text_input('Reviewer')
@@ -249,9 +254,19 @@ def render(page,store,mode):
  elif page=='Management report':
   st.title('Management review'); start=st.date_input('Period start',today().replace(day=1)); end=st.date_input('Period end',today())
   if start>end: st.error('Invalid reporting period.'); return
-  matrix=project_matrix(start,end); al=e.alerts(t)
+  report_project=st.selectbox('Report project',['All accessible projects']+ids,format_func=lambda v:names.get(v,v))
+  selected_project=next((p for p in allowed if p['id']==report_project),None)
+  from branding_ui import report_options
+  profiles=report_options(t,selected_project,role in ('Administrator','Corporate manager'),'management_'+report_project)
+  matrix=project_matrix(start,end); al=e.alerts(t); decisions=t['13_CORP_FEEDBACK']
+  if selected_project:
+   matrix=[r for r in matrix if r['Code']==report_project]
+   al=[r for r in al if r['Project']==report_project]
+   decisions=[r for r in decisions if r['Project']==report_project]
   frame(matrix); st.subheader('Top management interventions'); frame(al[:10])
-  report=f'<html><head><meta charset="utf-8"><title>HSE Management Review</title><style>body{{font:14px Arial;padding:32px}}table{{border-collapse:collapse;width:100%}}th,td{{padding:8px;border:1px solid #ddd}}th{{background:#164d56;color:white}}@media print{{body{{padding:0}}}}</style></head><body><h1>Corporate HSE management review</h1><p>{start} to {end} · Generated {datetime.now(TZ).isoformat()} · {html.escape(mode)}</p><p>Scores are provisional control assurance; review coverage. Alerts show current status.</p>'+pd.DataFrame(matrix).to_html(index=False,escape=True)+'<h2>Action required</h2>'+pd.DataFrame(al[:10]).to_html(index=False,escape=True)+'<h2>Corporate decisions</h2>'+pd.DataFrame(t['13_CORP_FEEDBACK']).to_html(index=False,escape=True)+'</body></html>'
+  if profiles is None: st.info('Correct the report branding details to enable the download.'); return
+  from management_report import management_html
+  report=management_html(start,end,datetime.now(TZ).isoformat(),mode,matrix,al,decisions,profiles,names.get(report_project,''))
   st.download_button('Download printable management report',report,'HSE-management-review.html','text/html')
   buff=io.BytesIO()
   with zipfile.ZipFile(buff,'w',zipfile.ZIP_DEFLATED) as z:

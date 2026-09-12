@@ -8,13 +8,21 @@ STATUSES = ['Active', 'Inactive', 'On Hold', 'Closed', 'Deleted']
 
 
 def validate_changes(tables, changes):
+    from branding import COMPANY_KEY, profile, validate_profile
     projects = {p['id']: p for p in tables.get('Projects', [])}
     for table, rows in changes.items():
         current = {r['id']: r for r in tables.get(table, [])}
         for row in rows:
             previous = current.get(row['id'], {})
             merged = {**previous, **row}
+            if table == 'Settings' and row['id'] == COMPANY_KEY:
+                value = merged.get('value', '{}')
+                if isinstance(value, str):
+                    try: value = json.loads(value)
+                    except ValueError as exc: raise ValueError('Invalid company branding profile.') from exc
+                validate_profile(value)
             if table == 'Projects':
+                if 'branding' in merged: validate_profile(merged['branding'])
                 status = merged.get('status', 'Active')
                 if previous.get('status') == 'Deleted':
                     raise ValueError('Deleted projects cannot be changed or reused.')

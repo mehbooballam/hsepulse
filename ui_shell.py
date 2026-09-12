@@ -12,6 +12,7 @@ NAV={
  'Data & export':('Data & exports','download'),
  'Project settings':('Manage projects','settings'),
  'Team & access':('Team & access','group'),
+ 'Company branding':('Company branding','palette'),
  'Overview':('KPI overview','monitoring'),
  'Daily entry':('Daily KPI entry','edit_calendar'),
  'KPI register':('KPI catalogue','list_alt'),
@@ -21,7 +22,7 @@ NAV={
 GROUPS={
  'WORKSPACE':['Corporate dashboard','Project dashboards','Operational registers','Alerts & decisions'],
  'REPORTS & RESOURCES':['Management report','Standards library','Data & export'],
- 'ADMINISTRATION':['Project settings','Team & access'],
+ 'ADMINISTRATION':['Project settings','Company branding','Team & access'],
 }
 KPI_PAGES=['Overview','Daily entry','KPI register','Corrective actions','Reports & export']
 
@@ -59,11 +60,13 @@ def styles():
 def brand():
  with st.sidebar:
   st.markdown('<div class="hse-brand"><div class="hse-brand-icon">✚</div><div><div class="hse-brand-name">HSE Pulse</div><div class="hse-brand-sub">Safety management</div></div></div>',unsafe_allow_html=True)
+  return st.empty()
 
 def allowed_pages(role, demo=False):
  pages=[p for values in GROUPS.values() for p in values]
  if not demo and role not in ('Administrator','Corporate manager'): pages.remove('Project settings')
  if not demo and role!='Administrator': pages.remove('Team & access')
+ if not demo and role!='Administrator': pages.remove('Company branding')
  if demo or role in ('Administrator','Corporate manager','Project manager','HSE officer','Project lead'): pages.append('Field forms')
  if demo or role in ('Administrator','Corporate manager'): pages+=KPI_PAGES
  return pages

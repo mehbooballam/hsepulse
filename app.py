@@ -19,7 +19,7 @@ ROOT=Path(__file__).parent
 st.set_page_config(page_title='HSE Pulse',page_icon='🛡️',layout='wide')
 import ui_shell
 ui_shell.styles()
-ui_shell.brand()
+company_branding_slot=ui_shell.brand()
 
 try: application_settings=dict(st.secrets)
 except (FileNotFoundError,st.errors.StreamlitSecretNotFoundError): application_settings={}
@@ -31,7 +31,7 @@ if production:
     except Exception: st.error('Organization services are unavailable. Contact the application administrator.'); st.stop()
     accounts,organization,claims,member=production_context
     st.session_state['authenticated_identity']=(
-        'Corporate manager' if member['role']=='Administrator' else member['role'],
+        member['role'],
         __import__('access_control').assignments(member),member['email'])
 
 mode='Database' if production else 'Demo'
@@ -57,7 +57,13 @@ except Exception as exc:
 
 if mode=='Demo': st.caption('Preview workspace · Sample records · Changes are saved only for this session.')
 if 'flash' in st.session_state: st.success(st.session_state.pop('flash'))
+from branding_ui import workspace_company
+workspace_company(store.read(),company_branding_slot.container())
 st.sidebar.caption('Last loaded: '+st.session_state[key+'_sync'][:19].replace('T',' ')+' UTC')
+if page=='Company branding':
+    from branding_ui import company_page
+    company_page(store,member['role'] if production else 'Administrator',member['email'] if production else 'Demo administrator')
+    st.stop()
 if page=='Team & access':
     if production:
         raw,who=organization,claims
@@ -77,7 +83,7 @@ if page in enterprise_ui.PAGES:
 # Legacy KPI workspace is corporate-only when live, to prevent unscoped exports.
 if mode=='Database':
     role,assigned,actor=enterprise_ui.identity(mode)
-    if role!='Corporate manager':
+    if role not in ('Administrator','Corporate manager'):
         st.info('The advanced KPI workspace is restricted to corporate managers. Use your project workspace.'); st.stop()
 defs=tables['Definitions']; defmap={d['id']:d for d in defs}; namemap={d['name']:d for d in defs}
 sites={r['id']:r['name'] for r in tables['Sites']}
